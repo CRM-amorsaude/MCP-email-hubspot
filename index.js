@@ -55,36 +55,29 @@ server.tool(
       });
       const clonedId = cloneRes.data.id;
 
-      // Passo 2 — Buscar a estrutura de widgets do clone para identificar o módulo HTML
+      // Passo 2 — Buscar a estrutura do clone
       const getRes = await hs.get(`/marketing/v3/emails/${clonedId}`);
       const widgets = getRes.data?.content?.widgets || {};
 
-      // Loga todos os widgets para debug
-      console.log(`[widgets encontrados]: ${JSON.stringify(Object.keys(widgets))}`);
-      Object.entries(widgets).forEach(([key, w]) => {
-        console.log(`  widget: ${key} | type: ${w?.type} | html: ${w?.body?.html ? "sim" : "não"}`);
-      });
+      // O módulo HTML customizado do template AmorSaúde
+      const HTML_WIDGET_KEY = process.env.HUBSPOT_HTML_WIDGET_KEY || "module_17435010851881";
 
-      // Encontra o widget HTML — procura por raw_jinja, rich_text ou qualquer um com body.html
-      let htmlWidgetKey = null;
-      for (const [key, widget] of Object.entries(widgets)) {
-        if (
-          widget?.type === "raw_jinja" ||
-          widget?.type === "rich_text" ||
-          widget?.body?.html !== undefined ||
-          widget?.body?.value !== undefined
-        ) {
-          htmlWidgetKey = key;
-          console.log(`[widget HTML encontrado]: ${key}`);
-          break;
+      // Verifica se o widget existe no clone, senão tenta encontrar automaticamente
+      let htmlWidgetKey = widgets[HTML_WIDGET_KEY] ? HTML_WIDGET_KEY : null;
+
+      if (!htmlWidgetKey) {
+        // Fallback: procura módulo com campo html sem path (HTML customizado)
+        for (const [key, widget] of Object.entries(widgets)) {
+          const bodyKeys = Object.keys(widget?.body || {});
+          if (bodyKeys.includes("html") && !bodyKeys.includes("path")) {
+            htmlWidgetKey = key;
+            console.log(`[widget HTML encontrado automaticamente]: ${key}`);
+            break;
+          }
         }
       }
 
-      // Se não achou, usa o primeiro widget disponível
-      if (!htmlWidgetKey && Object.keys(widgets).length > 0) {
-        htmlWidgetKey = Object.keys(widgets)[0];
-        console.log(`[widget HTML fallback]: ${htmlWidgetKey}`);
-      }
+      console.log(`[widget HTML usado]: ${htmlWidgetKey}`);
 
       // Passo 3 — Atualizar o clone com assunto, remetente e HTML do corpo
       const updatedWidgets = { ...widgets };
