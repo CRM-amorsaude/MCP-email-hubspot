@@ -49,11 +49,15 @@ server.tool(
         subject: assunto,
         content: {
           body: html_body,
+          htmlBody: html_body,
+          plainTextBody: "",
+          templateType: "CUSTOM",
         },
         fromName: nome_remetente || "AmorSaúde",
+        fromEmail: email_remetente || "",
         replyTo: email_remetente || "",
         isDraft: true,
-        type: "REGULAR_AB",
+        type: "BATCH",
         businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
       };
 
