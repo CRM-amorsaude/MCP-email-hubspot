@@ -59,17 +59,31 @@ server.tool(
       const getRes = await hs.get(`/marketing/v3/emails/${clonedId}`);
       const widgets = getRes.data?.content?.widgets || {};
 
-      // Encontra o widget do tipo HTML (módulo customizado)
+      // Loga todos os widgets para debug
+      console.log(`[widgets encontrados]: ${JSON.stringify(Object.keys(widgets))}`);
+      Object.entries(widgets).forEach(([key, w]) => {
+        console.log(`  widget: ${key} | type: ${w?.type} | html: ${w?.body?.html ? "sim" : "não"}`);
+      });
+
+      // Encontra o widget HTML — procura por raw_jinja, rich_text ou qualquer um com body.html
       let htmlWidgetKey = null;
       for (const [key, widget] of Object.entries(widgets)) {
         if (
           widget?.type === "raw_jinja" ||
           widget?.type === "rich_text" ||
-          widget?.body?.html !== undefined
+          widget?.body?.html !== undefined ||
+          widget?.body?.value !== undefined
         ) {
           htmlWidgetKey = key;
+          console.log(`[widget HTML encontrado]: ${key}`);
           break;
         }
+      }
+
+      // Se não achou, usa o primeiro widget disponível
+      if (!htmlWidgetKey && Object.keys(widgets).length > 0) {
+        htmlWidgetKey = Object.keys(widgets)[0];
+        console.log(`[widget HTML fallback]: ${htmlWidgetKey}`);
       }
 
       // Passo 3 — Atualizar o clone com assunto, remetente e HTML do corpo
