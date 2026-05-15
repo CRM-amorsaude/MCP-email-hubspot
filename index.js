@@ -47,22 +47,17 @@ server.tool(
       const payload = {
         name: nome,
         subject: assunto,
-        content: {
-          body: html_body,
-          htmlBody: html_body,
-          plainTextBody: "",
-          templateType: "CUSTOM",
-        },
+        htmlBody: html_body,
         fromName: nome_remetente || "AmorSaúde",
         fromEmail: email_remetente || "",
-        replyTo: email_remetente || "",
-        isDraft: true,
-        type: "BATCH",
+        replyToEmail: email_remetente || "",
+        isPublished: false,
+        emailType: "BATCH_EMAIL",
         businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
       };
 
-      const res = await hs.post("/marketing/v3/emails", payload);
-      const { id, name, subject, state } = res.data;
+      const res = await hs.post("/marketing-emails/v1/emails", payload);
+      const { id, name, subject, isPublished } = res.data;
       const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
       const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
       const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${id}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
@@ -71,7 +66,7 @@ server.tool(
         content: [
           {
             type: "text",
-            text: JSON.stringify({ id, name, subject, state, editUrl }, null, 2),
+            text: JSON.stringify({ id, name, subject, state: isPublished ? "PUBLISHED" : "DRAFT", editUrl }, null, 2),
           },
         ],
       };
