@@ -258,9 +258,18 @@ server.tool(
 // ─── HTTP Server ──────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-const BASE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+const BASE_URL = (process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
 const MCP_SECRET = process.env.MCP_SECRET || "amorsaude-mcp-secret";
+
+// Armazena codes PKCE em memória (suficiente para uso interno)
+const authCodes = new Map();
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+app.get("/", (_req, res) => {
+  res.json({ name: "hubspot-email-mcp", version: "1.0.0", status: "ok" });
+});
 
 // ── OAuth 2.0 — Authorization Server Metadata ─────────────────────────────────
 app.get("/.well-known/oauth-authorization-server", (_req, res) => {
@@ -270,43 +279,81 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     token_endpoint: `${BASE_URL}/oauth/token`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code"],
-    code_challenge_methods_supported: ["S256"],
+    code_challenge_methods_supported: ["S256", "plain"],
+    token_endpoint_auth_methods_supported: ["none"],
   });
 });
 
-// ── OAuth — Authorize (redireciona direto com code fixo) ──────────────────────
+// ── OAuth — Authorize ─────────────────────────────────────────────────────────
 app.get("/oauth/authorize", (req, res) => {
-  const { redirect_uri, state } = req.query;
-  if (!redirect_uri) return res.status(400).send("redirect_uri obrigatório");
-  const url = new URL(redirect_uri);
-  url.searchParams.set("code", "amorsaude-auth-code");
-  if (state) url.searchParams.set("state", state);
-  res.redirect(url.toString());
+  const { redirect_uri, state, code_challenge, code_challenge_method, client_id } = req.query;
+
+  if (!redirect_uri) {
+    return res.status(400).json({ error: "redirect_uri obrigatório" });
+  }
+
+  // Gera um code único e armazena com o challenge
+  const code = `code_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  authCodes.set(code, {
+    redirect_uri,
+    code_challenge,
+    code_challenge_method,
+    client_id,
+    created_at: Date.now(),
+  });
+
+  // Redireciona de volta para o Claude com o code
+  const callbackUrl = new URL(redirect_uri);
+  callbackUrl.searchParams.set("code", code);
+  if (state) callbackUrl.searchParams.set("state", state);
+
+  res.redirect(callbackUrl.toString());
 });
 
 // ── OAuth — Token exchange ─────────────────────────────────────────────────────
 app.post("/oauth/token", (req, res) => {
+  const { code, grant_type } = req.body;
+
+  // Aceita qualquer code válido que foi emitido por nós
+  if (grant_type === "authorization_code") {
+    if (!code || !authCodes.has(code)) {
+      return res.status(400).json({ error: "invalid_grant", error_description: "Code inválido ou expirado" });
+    }
+    authCodes.delete(code); // Invalida o code após uso
+  }
+
   res.json({
     access_token: MCP_SECRET,
     token_type: "bearer",
-    expires_in: 31536000, // 1 ano
+    expires_in: 31536000,
   });
 });
 
-// ── MCP endpoint (valida Bearer token) ───────────────────────────────────────
+// ── MCP endpoint ──────────────────────────────────────────────────────────────
 app.post("/mcp", async (req, res) => {
   const auth = req.headers["authorization"] || "";
-  const token = auth.replace("Bearer ", "").trim();
+  const token = auth.replace(/^[Bb]earer\s+/, "").trim();
+
   if (token !== MCP_SECRET) {
+    res.setHeader("WWW-Authenticate", `Bearer realm="${BASE_URL}"`);
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined, // stateless
+    sessionIdGenerator: undefined,
   });
   res.on("close", () => transport.close());
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
+});
+
+// ── GET /mcp — retorna metadata para descoberta ───────────────────────────────
+app.get("/mcp", (_req, res) => {
+  res.json({
+    name: "hubspot-email-mcp",
+    version: "1.0.0",
+    description: "MCP para criação de e-mails de marketing no HubSpot — AmorSaúde",
+  });
 });
 
 // ── Health check ──────────────────────────────────────────────────────────────
@@ -318,5 +365,5 @@ app.listen(PORT, () => {
   console.log(`✅ HubSpot MCP rodando na porta ${PORT}`);
   console.log(`   POST /mcp     → endpoint MCP`);
   console.log(`   GET  /health  → health check`);
-  console.log(`   OAuth habilitado em ${BASE_URL}`);
+  console.log(`   OAuth em ${BASE_URL}`);
 });
