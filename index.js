@@ -54,12 +54,14 @@ server.tool(
         replyTo: email_remetente || "",
         isDraft: true,
         type: "REGULAR_AB",
-        businessUnitId: process.env.HUBSPOT_BUSINESS_UNIT_ID || "5338832",
+        businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
       };
 
       const res = await hs.post("/marketing/v3/emails", payload);
       const { id, name, subject, state } = res.data;
-      const editUrl = `https://app.hubspot.com/email/${id}/edit`;
+      const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
+      const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
+      const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${id}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
 
       return {
         content: [
@@ -142,7 +144,9 @@ server.tool(
 
       const res = await hs.patch(`/marketing/v3/emails/${email_id}`, payload);
       const { id, name, subject, state } = res.data;
-      const editUrl = `https://app.hubspot.com/email/${id}/edit`;
+      const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
+      const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
+      const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${id}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
 
       return {
         content: [
