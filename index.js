@@ -47,16 +47,46 @@ server.tool(
       const payload = {
         name: nome,
         subject: assunto,
-        htmlBody: html_body,
+        content: {
+          widgets: {
+            hs_email_body: {
+              body: {
+                html: html_body,
+              },
+              id: "hs_email_body",
+              label: "Corpo do e-mail",
+              name: "hs_email_body",
+              type: "rich_text",
+            },
+          },
+        },
         fromName: nome_remetente || "AmorSaúde",
         fromEmail: email_remetente || "",
-        replyToEmail: email_remetente || "",
-        isPublished: false,
-        emailType: "BATCH_EMAIL",
+        replyTo: email_remetente || "",
+        isDraft: true,
+        type: "BATCH",
         businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
       };
 
-      const res = await hs.post("/marketing-emails/v1/emails", payload);
+      // Tenta v3 primeiro, fallback para v1
+      let res;
+      try {
+        res = await hs.post("/marketing/v3/emails", payload);
+      } catch (e) {
+        // fallback v1
+        const payloadV1 = {
+          name: nome,
+          subject: assunto,
+          htmlBody: html_body,
+          fromName: nome_remetente || "AmorSaúde",
+          fromEmail: email_remetente || "",
+          replyToEmail: email_remetente || "",
+          isPublished: false,
+          emailType: "BATCH_EMAIL",
+          businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
+        };
+        res = await hs.post("/marketing-emails/v1/emails", payloadV1);
+      }
       const { id, name, subject, isPublished } = res.data;
       const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
       const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
