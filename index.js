@@ -34,70 +34,77 @@ const server = new McpServer({
 // ── Tool 1: Criar rascunho de e-mail marketing ────────────────────────────────
 server.tool(
   "criar_email_rascunho",
-  "Cria um e-mail de marketing no HubSpot salvo como rascunho (isDraft: true). Retorna o ID e a URL de edição.",
+  "Cria um e-mail de marketing no HubSpot clonando o template base e substituindo apenas o corpo HTML. Retorna o ID e a URL de edição.",
   {
     nome: z.string().describe("Nome interno do e-mail (visível só para o time)"),
     assunto: z.string().describe("Assunto do e-mail que o destinatário vai ver"),
-    html_body: z.string().describe("HTML completo do corpo do e-mail"),
+    html_body: z.string().describe("HTML do corpo do e-mail (só o miolo — header e footer já estão no template)"),
     nome_remetente: z.string().optional().describe("Nome do remetente (ex: AmorSaúde)"),
     email_remetente: z.string().optional().describe("E-mail do remetente"),
   },
   async ({ nome, assunto, html_body, nome_remetente, email_remetente }) => {
     try {
-      const payload = {
-        name: nome,
-        subject: assunto,
-        content: {
-          templatePath: "@hubspot/email/dnd/plain_text.html",
-          widgets: {
-            "module-0-1-1": {
-              body: {
-                html: html_body,
-                css_class: "dnd-module",
-              },
-              id: "module-0-1-1",
-              name: "module-0-1-1",
-              type: "rich_text",
-            },
-          },
-        },
-        from: {
-          fromName: nome_remetente || "AmorSaúde",
-          replyTo: email_remetente || "",
-          fromEmail: email_remetente || "",
-        },
-        isDraft: true,
-        type: "BATCH",
-        businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
-      };
-
-      let res;
-      try {
-        res = await hs.post("/marketing/v3/emails", payload);
-      } catch (e) {
-        const payloadV1 = {
-          name: nome,
-          subject: assunto,
-          htmlBody: html_body,
-          fromName: nome_remetente || "AmorSaúde",
-          fromEmail: email_remetente || "",
-          replyToEmail: email_remetente || "",
-          isPublished: false,
-          emailType: "BATCH_EMAIL",
-          businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
-        };
-        res = await hs.post("/marketing-emails/v1/emails", payloadV1);
-      }
-      const { id, name, subject, isPublished } = res.data;
+      const TEMPLATE_ID = process.env.HUBSPOT_TEMPLATE_ID || "212982428723";
       const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
       const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
-      const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${id}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
+
+      // Passo 1 — Clonar o template base
+      const cloneRes = await hs.post("/marketing/v3/emails/clone", {
+        id: TEMPLATE_ID,
+        cloneName: nome,
+      });
+      const clonedId = cloneRes.data.id;
+
+      // Passo 2 — Buscar a estrutura de widgets do clone para identificar o módulo HTML
+      const getRes = await hs.get(`/marketing/v3/emails/${clonedId}`);
+      const widgets = getRes.data?.content?.widgets || {};
+
+      // Encontra o widget do tipo HTML (módulo customizado)
+      let htmlWidgetKey = null;
+      for (const [key, widget] of Object.entries(widgets)) {
+        if (
+          widget?.type === "raw_jinja" ||
+          widget?.type === "rich_text" ||
+          widget?.body?.html !== undefined
+        ) {
+          htmlWidgetKey = key;
+          break;
+        }
+      }
+
+      // Passo 3 — Atualizar o clone com assunto, remetente e HTML do corpo
+      const updatedWidgets = { ...widgets };
+      if (htmlWidgetKey) {
+        updatedWidgets[htmlWidgetKey] = {
+          ...widgets[htmlWidgetKey],
+          body: {
+            ...widgets[htmlWidgetKey]?.body,
+            html: html_body,
+          },
+        };
+      }
+
+      await hs.patch(`/marketing/v3/emails/${clonedId}`, {
+        name: nome,
+        subject: assunto,
+        from: {
+          fromName: nome_remetente || "AmorSaúde",
+          fromEmail: email_remetente || "naoresponda@amorsaude.com",
+          replyTo: email_remetente || "naoresponda@amorsaude.com",
+        },
+        content: {
+          ...getRes.data?.content,
+          widgets: updatedWidgets,
+        },
+      });
+
+      const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${clonedId}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
 
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify({ id, name, subject, state: isPublished ? "PUBLISHED" : "DRAFT", editUrl }, null, 2),
+            text: JSON.stringify({ id: clonedId, name: nome, subject: assunto, state: "DRAFT", editUrl }, null, 2),
           },
         ],
       };
