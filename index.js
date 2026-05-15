@@ -54,6 +54,7 @@ server.tool(
         replyTo: email_remetente || "",
         isDraft: true,
         type: "REGULAR_AB",
+        businessUnitId: process.env.HUBSPOT_BUSINESS_UNIT_ID || "5338832",
       };
 
       const res = await hs.post("/marketing/v3/emails", payload);
@@ -254,11 +255,52 @@ server.tool(
   }
 );
 
-// ─── HTTP Server (Streamable HTTP Transport — padrão MCP remoto) ──────────────
+// ─── HTTP Server ──────────────────────────────────────────────────────────────
 const app = express();
 app.use(express.json());
 
+const BASE_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+const MCP_SECRET = process.env.MCP_SECRET || "amorsaude-mcp-secret";
+
+// ── OAuth 2.0 — Authorization Server Metadata ─────────────────────────────────
+app.get("/.well-known/oauth-authorization-server", (_req, res) => {
+  res.json({
+    issuer: BASE_URL,
+    authorization_endpoint: `${BASE_URL}/oauth/authorize`,
+    token_endpoint: `${BASE_URL}/oauth/token`,
+    response_types_supported: ["code"],
+    grant_types_supported: ["authorization_code"],
+    code_challenge_methods_supported: ["S256"],
+  });
+});
+
+// ── OAuth — Authorize (redireciona direto com code fixo) ──────────────────────
+app.get("/oauth/authorize", (req, res) => {
+  const { redirect_uri, state } = req.query;
+  if (!redirect_uri) return res.status(400).send("redirect_uri obrigatório");
+  const url = new URL(redirect_uri);
+  url.searchParams.set("code", "amorsaude-auth-code");
+  if (state) url.searchParams.set("state", state);
+  res.redirect(url.toString());
+});
+
+// ── OAuth — Token exchange ─────────────────────────────────────────────────────
+app.post("/oauth/token", (req, res) => {
+  res.json({
+    access_token: MCP_SECRET,
+    token_type: "bearer",
+    expires_in: 31536000, // 1 ano
+  });
+});
+
+// ── MCP endpoint (valida Bearer token) ───────────────────────────────────────
 app.post("/mcp", async (req, res) => {
+  const auth = req.headers["authorization"] || "";
+  const token = auth.replace("Bearer ", "").trim();
+  if (token !== MCP_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless
   });
@@ -267,12 +309,14 @@ app.post("/mcp", async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
+// ── Health check ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", server: "hubspot-email-mcp", version: "1.0.0" });
 });
 
 app.listen(PORT, () => {
   console.log(`✅ HubSpot MCP rodando na porta ${PORT}`);
-  console.log(`   POST /mcp  → endpoint MCP`);
-  console.log(`   GET  /health → health check`);
+  console.log(`   POST /mcp     → endpoint MCP`);
+  console.log(`   GET  /health  → health check`);
+  console.log(`   OAuth habilitado em ${BASE_URL}`);
 });
