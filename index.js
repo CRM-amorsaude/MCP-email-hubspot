@@ -1,3 +1,4 @@
+
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -60,7 +61,7 @@ server.tool(
       const widgets = getRes.data?.content?.widgets || {};
 
       // O módulo HTML customizado do template AmorSaúde
-      const HTML_WIDGET_KEY = process.env.HUBSPOT_HTML_WIDGET_KEY || "module_17435010851881";
+      const HTML_WIDGET_KEY = process.env.HUBSPOT_HTML_WIDGET_KEY || "module_17788814352591";
 
       // Verifica se o widget existe no clone, senão tenta encontrar automaticamente
       let htmlWidgetKey = widgets[HTML_WIDGET_KEY] ? HTML_WIDGET_KEY : null;
