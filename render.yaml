@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: hubspot-email-mcp
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: HUBSPOT_TOKEN
+        sync: false
+      - key: SLACK_WEBHOOK_URL
+        sync: false
+      - key: PORT
+        value: 3000
