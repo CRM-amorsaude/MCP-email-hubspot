@@ -48,32 +48,33 @@ server.tool(
         name: nome,
         subject: assunto,
         content: {
+          templatePath: "@hubspot/email/dnd/plain_text.html",
           widgets: {
-            hs_email_body: {
+            "module-0-1-1": {
               body: {
                 html: html_body,
+                css_class: "dnd-module",
               },
-              id: "hs_email_body",
-              label: "Corpo do e-mail",
-              name: "hs_email_body",
+              id: "module-0-1-1",
+              name: "module-0-1-1",
               type: "rich_text",
             },
           },
         },
-        fromName: nome_remetente || "AmorSaúde",
-        fromEmail: email_remetente || "",
-        replyTo: email_remetente || "",
+        from: {
+          fromName: nome_remetente || "AmorSaúde",
+          replyTo: email_remetente || "",
+          fromEmail: email_remetente || "",
+        },
         isDraft: true,
         type: "BATCH",
         businessUnitId: parseInt(process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144"),
       };
 
-      // Tenta v3 primeiro, fallback para v1
       let res;
       try {
         res = await hs.post("/marketing/v3/emails", payload);
       } catch (e) {
-        // fallback v1
         const payloadV1 = {
           name: nome,
           subject: assunto,
