@@ -277,8 +277,8 @@ app.get("/", (_req, res) => {
 app.get("/.well-known/oauth-authorization-server", (_req, res) => {
   res.json({
     issuer: BASE_URL,
-    authorization_endpoint: `${BASE_URL}/oauth/authorize`,
-    token_endpoint: `${BASE_URL}/oauth/token`,
+    authorization_endpoint: `${BASE_URL}/authorize`,
+    token_endpoint: `${BASE_URL}/token`,
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code"],
     code_challenge_methods_supported: ["S256", "plain"],
@@ -286,8 +286,8 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
   });
 });
 
-// ── OAuth — Authorize ─────────────────────────────────────────────────────────
-app.get("/oauth/authorize", (req, res) => {
+// ── OAuth — Authorize (com e sem prefixo /oauth) ──────────────────────────────
+const handleAuthorize = (req, res) => {
   const { redirect_uri, state, code_challenge, code_challenge_method, client_id } = req.query;
 
   console.log(`[authorize] client_id=${client_id} redirect_uri=${redirect_uri}`);
@@ -311,10 +311,13 @@ app.get("/oauth/authorize", (req, res) => {
 
   console.log(`[authorize] redirecionando para ${callbackUrl.toString()}`);
   res.redirect(callbackUrl.toString());
-});
+};
 
-// ── OAuth — Token exchange ─────────────────────────────────────────────────────
-app.post("/oauth/token", express.text({ type: "*/*" }), (req, res) => {
+app.get("/oauth/authorize", handleAuthorize);
+app.get("/authorize", handleAuthorize);
+
+// ── OAuth — Token exchange (com e sem prefixo /oauth) ─────────────────────────
+const handleToken = (req, res) => {
   let body = req.body;
   if (typeof body === "string") {
     try {
@@ -359,7 +362,10 @@ app.post("/oauth/token", express.text({ type: "*/*" }), (req, res) => {
     token_type: "bearer",
     expires_in: 31536000,
   });
-});
+};
+
+app.post("/oauth/token", express.text({ type: "*/*" }), handleToken);
+app.post("/token", express.text({ type: "*/*" }), handleToken);
 
 // ── MCP endpoint ──────────────────────────────────────────────────────────────
 app.post("/mcp", async (req, res) => {
