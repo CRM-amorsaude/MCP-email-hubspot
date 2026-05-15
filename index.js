@@ -217,6 +217,37 @@ server.tool(
   }
 );
 
+// ── Tool diagnóstico: Inspecionar widgets de um e-mail ────────────────────────
+server.tool(
+  "inspecionar_widgets",
+  "Retorna a estrutura completa de widgets de um e-mail HubSpot. Use para identificar o ID correto do módulo HTML.",
+  {
+    email_id: z.string().describe("ID do e-mail no HubSpot"),
+  },
+  async ({ email_id }) => {
+    try {
+      const res = await hs.get(`/marketing/v3/emails/${email_id}`);
+      const widgets = res.data?.content?.widgets || {};
+      const resultado = Object.entries(widgets).map(([key, w]) => ({
+        key,
+        type: w?.type,
+        bodyKeys: Object.keys(w?.body || {}),
+        htmlPreview: w?.body?.html ? w.body.html.substring(0, 150) : null,
+        valuePreview: w?.body?.value ? String(w.body.value).substring(0, 150) : null,
+      }));
+      return {
+        content: [{ type: "text", text: JSON.stringify({ totalWidgets: resultado.length, widgets: resultado }, null, 2) }],
+      };
+    } catch (err) {
+      const detail = err.response?.data?.message || err.message;
+      return {
+        content: [{ type: "text", text: `❌ Erro: ${detail}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
 // ── Tool 4: Notificar CRM via Slack ──────────────────────────────────────────
 server.tool(
   "notificar_crm",
