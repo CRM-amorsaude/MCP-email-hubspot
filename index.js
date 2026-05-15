@@ -311,15 +311,27 @@ app.get("/oauth/authorize", (req, res) => {
 });
 
 // ── OAuth — Token exchange ─────────────────────────────────────────────────────
-app.post("/oauth/token", (req, res) => {
-  const { code, grant_type } = req.body;
+app.post("/oauth/token", express.text({ type: "*/*" }), (req, res) => {
+  // Suporta application/json, application/x-www-form-urlencoded e text/plain
+  let body = req.body;
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      body = Object.fromEntries(new URLSearchParams(body));
+    }
+  }
 
-  // Aceita qualquer code válido que foi emitido por nós
+  const { code, grant_type } = body || {};
+
+  console.log(`[token] grant_type=${grant_type} code=${code}`);
+
   if (grant_type === "authorization_code") {
     if (!code || !authCodes.has(code)) {
+      console.warn(`[token] code inválido: ${code} | codes ativos: ${[...authCodes.keys()].join(", ")}`);
       return res.status(400).json({ error: "invalid_grant", error_description: "Code inválido ou expirado" });
     }
-    authCodes.delete(code); // Invalida o code após uso
+    authCodes.delete(code);
   }
 
   res.json({
