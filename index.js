@@ -262,8 +262,10 @@ app.use(express.urlencoded({ extended: true }));
 
 const BASE_URL = (process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
 const MCP_SECRET = process.env.MCP_SECRET || "amorsaude-mcp-secret";
+const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || "amorsaude-client-id";
+const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || "amorsaude-client-secret";
 
-// Armazena codes PKCE em memória (suficiente para uso interno)
+// Armazena codes em memória
 const authCodes = new Map();
 
 // ── Root ──────────────────────────────────────────────────────────────────────
@@ -280,7 +282,7 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code"],
     code_challenge_methods_supported: ["S256", "plain"],
-    token_endpoint_auth_methods_supported: ["none"],
+    token_endpoint_auth_methods_supported: ["client_secret_post", "client_secret_basic", "none"],
   });
 });
 
@@ -288,11 +290,12 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
 app.get("/oauth/authorize", (req, res) => {
   const { redirect_uri, state, code_challenge, code_challenge_method, client_id } = req.query;
 
+  console.log(`[authorize] client_id=${client_id} redirect_uri=${redirect_uri}`);
+
   if (!redirect_uri) {
     return res.status(400).json({ error: "redirect_uri obrigatório" });
   }
 
-  // Gera um code único e armazena com o challenge
   const code = `code_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   authCodes.set(code, {
     redirect_uri,
@@ -302,17 +305,16 @@ app.get("/oauth/authorize", (req, res) => {
     created_at: Date.now(),
   });
 
-  // Redireciona de volta para o Claude com o code
   const callbackUrl = new URL(redirect_uri);
   callbackUrl.searchParams.set("code", code);
   if (state) callbackUrl.searchParams.set("state", state);
 
+  console.log(`[authorize] redirecionando para ${callbackUrl.toString()}`);
   res.redirect(callbackUrl.toString());
 });
 
 // ── OAuth — Token exchange ─────────────────────────────────────────────────────
 app.post("/oauth/token", express.text({ type: "*/*" }), (req, res) => {
-  // Suporta application/json, application/x-www-form-urlencoded e text/plain
   let body = req.body;
   if (typeof body === "string") {
     try {
@@ -322,14 +324,32 @@ app.post("/oauth/token", express.text({ type: "*/*" }), (req, res) => {
     }
   }
 
-  const { code, grant_type } = body || {};
+  // Suporta client_secret via Authorization header (Basic Auth)
+  const authHeader = req.headers["authorization"] || "";
+  if (authHeader.startsWith("Basic ")) {
+    const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
+    const [id, secret] = decoded.split(":");
+    body.client_id = body.client_id || id;
+    body.client_secret = body.client_secret || secret;
+  }
 
-  console.log(`[token] grant_type=${grant_type} code=${code}`);
+  const { code, grant_type, client_id, client_secret } = body || {};
+  console.log(`[token] grant_type=${grant_type} client_id=${client_id} code=${code}`);
+
+  // Valida client_id e client_secret se fornecidos
+  if (client_id && client_id !== OAUTH_CLIENT_ID) {
+    console.warn(`[token] client_id inválido: ${client_id}`);
+    return res.status(401).json({ error: "invalid_client" });
+  }
+  if (client_secret && client_secret !== OAUTH_CLIENT_SECRET) {
+    console.warn(`[token] client_secret inválido`);
+    return res.status(401).json({ error: "invalid_client" });
+  }
 
   if (grant_type === "authorization_code") {
     if (!code || !authCodes.has(code)) {
-      console.warn(`[token] code inválido: ${code} | codes ativos: ${[...authCodes.keys()].join(", ")}`);
-      return res.status(400).json({ error: "invalid_grant", error_description: "Code inválido ou expirado" });
+      console.warn(`[token] code inválido: ${code}`);
+      return res.status(400).json({ error: "invalid_grant" });
     }
     authCodes.delete(code);
   }
