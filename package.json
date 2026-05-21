@@ -1,6 +1,6 @@
 {
   "name": "hubspot-email-mcp",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "MCP Server para criação e gestão de e-mails de marketing no HubSpot — AmorSaúde",
   "main": "index.js",
   "type": "module",
