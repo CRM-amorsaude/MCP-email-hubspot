@@ -1,9 +1,9 @@
-
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
 import axios from "axios";
 import express from "express";
+import FormData from "form-data";
 
 const HUBSPOT_TOKEN = process.env.HUBSPOT_TOKEN;
 const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
@@ -29,7 +29,7 @@ const hs = axios.create({
 // ─── Servidor MCP ────────────────────────────────────────────────────────────
 const server = new McpServer({
   name: "hubspot-email-mcp",
-  version: "1.0.0",
+  version: "2.0.0",
 });
 
 // ── Tool 1: Criar rascunho de e-mail marketing ────────────────────────────────
@@ -49,25 +49,19 @@ server.tool(
       const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
       const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
 
-      // Passo 1 — Clonar o template base
       const cloneRes = await hs.post("/marketing/v3/emails/clone", {
         id: TEMPLATE_ID,
         cloneName: nome,
       });
       const clonedId = cloneRes.data.id;
 
-      // Passo 2 — Buscar a estrutura do clone
       const getRes = await hs.get(`/marketing/v3/emails/${clonedId}`);
       const widgets = getRes.data?.content?.widgets || {};
 
-      // O módulo HTML customizado do template AmorSaúde
       const HTML_WIDGET_KEY = process.env.HUBSPOT_HTML_WIDGET_KEY || "module_17788814352591";
-
-      // Verifica se o widget existe no clone, senão tenta encontrar automaticamente
       let htmlWidgetKey = widgets[HTML_WIDGET_KEY] ? HTML_WIDGET_KEY : null;
 
       if (!htmlWidgetKey) {
-        // Fallback: procura módulo com campo html sem path (HTML customizado)
         for (const [key, widget] of Object.entries(widgets)) {
           const bodyKeys = Object.keys(widget?.body || {});
           if (bodyKeys.includes("html") && !bodyKeys.includes("path")) {
@@ -80,7 +74,6 @@ server.tool(
 
       console.log(`[widget HTML usado]: ${htmlWidgetKey}`);
 
-      // Passo 3 — Atualizar o clone com assunto, remetente e HTML do corpo
       const updatedWidgets = { ...widgets };
       if (htmlWidgetKey) {
         updatedWidgets[htmlWidgetKey] = {
@@ -126,7 +119,7 @@ server.tool(
   }
 );
 
-// ── Tool 2: Listar e-mails (rascunhos e publicados) ───────────────────────────
+// ── Tool 2: Listar e-mails ────────────────────────────────────────────────────
 server.tool(
   "listar_emails",
   "Lista os e-mails de marketing cadastrados no HubSpot. Pode filtrar por estado (DRAFT, PUBLISHED, etc.).",
@@ -211,7 +204,7 @@ server.tool(
   }
 );
 
-// ── Tool diagnóstico: Inspecionar widgets de um e-mail ────────────────────────
+// ── Tool 4: Inspecionar widgets ───────────────────────────────────────────────
 server.tool(
   "inspecionar_widgets",
   "Retorna a estrutura completa de widgets de um e-mail HubSpot. Use para identificar o ID correto do módulo HTML.",
@@ -242,7 +235,106 @@ server.tool(
   }
 );
 
-// ── Tool 4: Notificar CRM via Slack ──────────────────────────────────────────
+// ── Tool 5: Upload de asset para HubSpot File Manager ────────────────────────
+server.tool(
+  "upload_asset",
+  `Faz o download de uma URL de imagem (ex: URL de export do Figma) e sobe o arquivo para o File Manager do HubSpot.
+   Retorna a URL pública permanente para uso direto no HTML do e-mail.
+   Use antes de criar o rascunho sempre que o template tiver imagens vindas do Figma.`,
+  {
+    url_origem: z
+      .string()
+      .describe("URL pública da imagem a ser baixada (ex: URL de render do Figma, CDN, etc.)"),
+    nome_arquivo: z
+      .string()
+      .describe("Nome do arquivo com extensão (ex: banner-dermatologista.png). Use kebab-case, sem espaços."),
+    pasta: z
+      .string()
+      .optional()
+      .default("crm-emails")
+      .describe("Pasta no File Manager do HubSpot onde o arquivo será salvo (padrão: crm-emails)"),
+  },
+  async ({ url_origem, nome_arquivo, pasta }) => {
+    try {
+      // Passo 1 — Baixa a imagem da URL de origem como buffer
+      console.log(`[upload_asset] baixando: ${url_origem}`);
+      const downloadRes = await axios.get(url_origem, {
+        responseType: "arraybuffer",
+        timeout: 30000,
+        headers: {
+          // Necessário para URLs autenticadas do Figma
+          ...(url_origem.includes("figma.com") && process.env.FIGMA_TOKEN
+            ? { "X-Figma-Token": process.env.FIGMA_TOKEN }
+            : {}),
+        },
+      });
+
+      const fileBuffer = Buffer.from(downloadRes.data);
+      const contentType = downloadRes.headers["content-type"] || "image/png";
+      console.log(`[upload_asset] baixado ${fileBuffer.length} bytes | content-type: ${contentType}`);
+
+      // Passo 2 — Monta o multipart/form-data para o HubSpot Files API
+      const form = new FormData();
+      form.append("file", fileBuffer, {
+        filename: nome_arquivo,
+        contentType: contentType,
+      });
+      form.append("folderPath", `/${pasta}`);
+      form.append(
+        "options",
+        JSON.stringify({
+          access: "PUBLIC_NOT_INDEXABLE", // Pública via URL, não indexada por buscadores
+          overwrite: true,                // Substitui se já existir (evita duplicatas)
+          duplicateValidationStrategy: "NONE",
+          duplicateValidationScope: "ENTIRE_PORTAL",
+        })
+      );
+
+      // Passo 3 — Envia para o HubSpot File Manager
+      console.log(`[upload_asset] enviando para HubSpot Files: /${pasta}/${nome_arquivo}`);
+      const uploadRes = await axios.post("https://api.hubapi.com/files/v3/files", form, {
+        headers: {
+          Authorization: `Bearer ${HUBSPOT_TOKEN}`,
+          ...form.getHeaders(),
+        },
+        maxBodyLength: Infinity,
+        timeout: 60000,
+      });
+
+      const { id: fileId, url: fileUrl, name } = uploadRes.data;
+      console.log(`[upload_asset] ✅ sucesso: fileId=${fileId} url=${fileUrl}`);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                sucesso: true,
+                fileId,
+                nome: name,
+                url_publica: fileUrl,
+                pasta: `/${pasta}`,
+                mensagem: `Asset enviado com sucesso. Use a url_publica no src das imagens do HTML.`,
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    } catch (err) {
+      const detail = err.response?.data?.message || err.response?.data || err.message;
+      console.error(`[upload_asset] ❌ erro:`, detail);
+      return {
+        content: [{ type: "text", text: `❌ Erro ao fazer upload do asset: ${JSON.stringify(detail)}` }],
+        isError: true,
+      };
+    }
+  }
+);
+
+// ── Tool 6: Notificar CRM via Slack ──────────────────────────────────────────
 server.tool(
   "notificar_crm",
   "Envia uma mensagem no Slack para o canal do time de CRM avisando que um rascunho de e-mail está pronto para disparo no HubSpot.",
@@ -345,15 +437,12 @@ const MCP_SECRET = process.env.MCP_SECRET || "amorsaude-mcp-secret";
 const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || "amorsaude-client-id";
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || "amorsaude-client-secret";
 
-// Armazena codes em memória
 const authCodes = new Map();
 
-// ── Root ──────────────────────────────────────────────────────────────────────
 app.get("/", (_req, res) => {
-  res.json({ name: "hubspot-email-mcp", version: "1.0.0", status: "ok" });
+  res.json({ name: "hubspot-email-mcp", version: "2.0.0", status: "ok" });
 });
 
-// ── OAuth 2.0 — Authorization Server Metadata ─────────────────────────────────
 app.get("/.well-known/oauth-authorization-server", (_req, res) => {
   res.json({
     issuer: BASE_URL,
@@ -366,48 +455,28 @@ app.get("/.well-known/oauth-authorization-server", (_req, res) => {
   });
 });
 
-// ── OAuth — Authorize (com e sem prefixo /oauth) ──────────────────────────────
 const handleAuthorize = (req, res) => {
   const { redirect_uri, state, code_challenge, code_challenge_method, client_id } = req.query;
-
   console.log(`[authorize] client_id=${client_id} redirect_uri=${redirect_uri}`);
-
-  if (!redirect_uri) {
-    return res.status(400).json({ error: "redirect_uri obrigatório" });
-  }
+  if (!redirect_uri) return res.status(400).json({ error: "redirect_uri obrigatório" });
 
   const code = `code_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  authCodes.set(code, {
-    redirect_uri,
-    code_challenge,
-    code_challenge_method,
-    client_id,
-    created_at: Date.now(),
-  });
+  authCodes.set(code, { redirect_uri, code_challenge, code_challenge_method, client_id, created_at: Date.now() });
 
   const callbackUrl = new URL(redirect_uri);
   callbackUrl.searchParams.set("code", code);
   if (state) callbackUrl.searchParams.set("state", state);
-
-  console.log(`[authorize] redirecionando para ${callbackUrl.toString()}`);
   res.redirect(callbackUrl.toString());
 };
 
 app.get("/oauth/authorize", handleAuthorize);
 app.get("/authorize", handleAuthorize);
 
-// ── OAuth — Token exchange (com e sem prefixo /oauth) ─────────────────────────
 const handleToken = (req, res) => {
   let body = req.body;
   if (typeof body === "string") {
-    try {
-      body = JSON.parse(body);
-    } catch {
-      body = Object.fromEntries(new URLSearchParams(body));
-    }
+    try { body = JSON.parse(body); } catch { body = Object.fromEntries(new URLSearchParams(body)); }
   }
-
-  // Suporta client_secret via Authorization header (Basic Auth)
   const authHeader = req.headers["authorization"] || "";
   if (authHeader.startsWith("Basic ")) {
     const decoded = Buffer.from(authHeader.slice(6), "base64").toString();
@@ -415,72 +484,43 @@ const handleToken = (req, res) => {
     body.client_id = body.client_id || id;
     body.client_secret = body.client_secret || secret;
   }
-
   const { code, grant_type, client_id, client_secret } = body || {};
   console.log(`[token] grant_type=${grant_type} client_id=${client_id} code=${code}`);
-
-  // Valida client_id e client_secret se fornecidos
-  if (client_id && client_id !== OAUTH_CLIENT_ID) {
-    console.warn(`[token] client_id inválido: ${client_id}`);
-    return res.status(401).json({ error: "invalid_client" });
-  }
-  if (client_secret && client_secret !== OAUTH_CLIENT_SECRET) {
-    console.warn(`[token] client_secret inválido`);
-    return res.status(401).json({ error: "invalid_client" });
-  }
-
+  if (client_id && client_id !== OAUTH_CLIENT_ID) return res.status(401).json({ error: "invalid_client" });
+  if (client_secret && client_secret !== OAUTH_CLIENT_SECRET) return res.status(401).json({ error: "invalid_client" });
   if (grant_type === "authorization_code") {
-    if (!code || !authCodes.has(code)) {
-      console.warn(`[token] code inválido: ${code}`);
-      return res.status(400).json({ error: "invalid_grant" });
-    }
+    if (!code || !authCodes.has(code)) return res.status(400).json({ error: "invalid_grant" });
     authCodes.delete(code);
   }
-
-  res.json({
-    access_token: MCP_SECRET,
-    token_type: "bearer",
-    expires_in: 31536000,
-  });
+  res.json({ access_token: MCP_SECRET, token_type: "bearer", expires_in: 31536000 });
 };
 
 app.post("/oauth/token", express.text({ type: "*/*" }), handleToken);
 app.post("/token", express.text({ type: "*/*" }), handleToken);
 
-// ── MCP endpoint ──────────────────────────────────────────────────────────────
 app.post("/mcp", async (req, res) => {
   const auth = req.headers["authorization"] || "";
   const token = auth.replace(/^[Bb]earer\s+/, "").trim();
-
   if (token !== MCP_SECRET) {
     res.setHeader("WWW-Authenticate", `Bearer realm="${BASE_URL}"`);
     return res.status(401).json({ error: "Unauthorized" });
   }
-
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-  });
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on("close", () => transport.close());
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
 });
 
-// ── GET /mcp — retorna metadata para descoberta ───────────────────────────────
 app.get("/mcp", (_req, res) => {
-  res.json({
-    name: "hubspot-email-mcp",
-    version: "1.0.0",
-    description: "MCP para criação de e-mails de marketing no HubSpot — AmorSaúde",
-  });
+  res.json({ name: "hubspot-email-mcp", version: "2.0.0", description: "MCP para e-mails de marketing no HubSpot — AmorSaúde" });
 });
 
-// ── Health check ──────────────────────────────────────────────────────────────
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", server: "hubspot-email-mcp", version: "1.0.0" });
+  res.json({ status: "ok", server: "hubspot-email-mcp", version: "2.0.0" });
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ HubSpot MCP rodando na porta ${PORT}`);
+  console.log(`✅ HubSpot MCP v2.0.0 rodando na porta ${PORT}`);
   console.log(`   POST /mcp     → endpoint MCP`);
   console.log(`   GET  /health  → health check`);
   console.log(`   OAuth em ${BASE_URL}`);
