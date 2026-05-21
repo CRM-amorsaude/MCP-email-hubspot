@@ -1,6 +1,8 @@
-# HubSpot Email MCP — AmorSaúde
+# HubSpot Email MCP — AmorSaúde v3.0.0
 
-Servidor MCP para criação e gestão de e-mails de marketing no HubSpot, com upload de assets do Figma e notificação ao time de CRM via Slack.
+Servidor MCP para criação de e-mails de marketing no HubSpot usando **HTML Híbrido**:
+clona o template base preservando header e footer, e monta o miolo com blocos independentes
+definidos dinamicamente pelo Claude a partir do Figma.
 
 ---
 
@@ -8,51 +10,62 @@ Servidor MCP para criação e gestão de e-mails de marketing no HubSpot, com up
 
 | Tool | O que faz |
 |---|---|
-| `criar_email_rascunho` | Cria um e-mail de marketing no HubSpot como rascunho (isDraft: true) |
-| `listar_emails` | Lista e-mails cadastrados, com filtro por estado (DRAFT, PUBLISHED...) |
-| `atualizar_email_rascunho` | Atualiza assunto ou HTML de um rascunho pelo ID |
-| `inspecionar_widgets` | Diagnóstico: retorna a estrutura de módulos de um e-mail |
-| `upload_asset` | **[NOVO]** Baixa imagem de uma URL (ex: Figma) e sobe para o File Manager do HubSpot. Retorna URL pública permanente |
-| `notificar_crm` | Envia mensagem no Slack com botão direto para o rascunho no HubSpot |
+| `montar_email_hibrido` | **[PRINCIPAL]** Clona o template, preserva header/footer e monta o miolo com blocos independentes (imagem, rich_text, html, cta) |
+| `inspecionar_secoes` | **[NOVO]** Mapeia as seções flexAreas do e-mail, identificando header, miolo editável e footer |
+| `listar_emails` | Lista e-mails cadastrados, com filtro por estado |
+| `atualizar_email_rascunho` | Atualiza assunto ou nome de um rascunho pelo ID |
+| `inspecionar_widgets` | Retorna estrutura de widgets para diagnóstico |
+| `upload_asset` | Baixa imagem de uma URL (ex: Figma) e sobe para o File Manager do HubSpot |
+| `notificar_crm` | Envia mensagem no Slack com botão direto para o rascunho |
 
 ---
 
-## 🔄 Workflow completo no Claude (com Figma)
+## 🔄 Fluxo completo no Claude (Figma → HubSpot)
 
 ```
-1. Claude lê o template no Figma via MCP Figma
-2. Claude identifica todos os assets (fotos, ícones, logo)
-3. Claude chama upload_asset para cada imagem → recebe URLs permanentes HubSpot
-4. Claude gera o HTML do e-mail com as URLs reais no src das imagens
-5. Time de MKT valida no chat → diz "aprovado"
-6. Claude chama criar_email_rascunho com o HTML pronto
-7. Claude chama notificar_crm → mensagem no Slack com botão "Abrir no HubSpot"
-8. Alexy / Emily / Victor clicam no botão, revisam e disparam
+1. Claude lê o template no Figma via MCP Figma (get_design_context)
+2. Claude identifica os blocos do miolo: banner, texto, serviços, CTA, etc.
+3. Para cada asset (imagens, ícones, GIFs): Claude chama upload_asset → recebe URL permanente
+4. Claude monta o array de blocos com o tipo correto para cada elemento:
+   - Banner principal        → tipo: "imagem"      (módulo nativo)
+   - Saudação + texto        → tipo: "rich_text"   (suporta {{ contact.firstname }})
+   - Lista de serviços/ícones → tipo: "html"        (módulo HTML livre)
+   - Botão de agendamento    → tipo: "cta"         (módulo nativo com rastreamento)
+   - Layout 2 colunas        → tipo: "html"        (tabela HTML)
+   - Badges de especialidades → tipo: "html"        (HTML com bordas)
+5. Claude chama montar_email_hibrido → header/footer preservados, miolo montado
+6. Claude chama notificar_crm → time notificado no Slack
 ```
 
 ---
 
-## 🚀 Deploy no Render
+## 🔒 Módulos protegidos (header e footer)
 
-### 1. Atualize as permissões do Private App no HubSpot
-1. HubSpot → **Settings → Integrations → Private Apps → Claude MCP**
-2. Adicione o scope: `files` — ler e fazer upload de arquivos no File Manager
-3. Salve e copie o novo token gerado (ou use o existente se os scopes foram adicionados sem revogar)
+Esses widgets nunca são modificados pelo fluxo híbrido:
 
-### 2. Adicione a variável de ambiente no Render
-No dashboard do Render, adicione:
-- `FIGMA_TOKEN` → Personal Access Token do Figma (Settings > Account > Personal Access Tokens)
-  - Necessário apenas para URLs autenticadas do Figma. Opcional se o arquivo for público.
-
-As demais variáveis (`HUBSPOT_TOKEN`, `SLACK_WEBHOOK_URL`) já estão configuradas.
-
-### 3. Atualize o código
-```bash
-git add .
-git commit -m "feat: adiciona tool upload_asset para HubSpot File Manager"
-git push
 ```
-O Render faz o redeploy automaticamente.
+module_16491575998179   — banner/imagem header
+module_16582585915422   — imagem secundária/logo header
+module_17435010851881   — HTML auxiliar header
+module_17750683168462   — CTA botão 1
+module_17750683168463   — CTA botão 2
+module_17750683168464   — CTA botão 3
+module_17750683168465   — CTA botão 4
+module_17437663382712   — redes sociais header
+module_17437663465645   — redes sociais footer
+module_164915764846218  — footer legal
+```
+
+---
+
+## 📦 Tipos de bloco suportados por montar_email_hibrido
+
+| Tipo | Módulo HubSpot | Quando usar |
+|---|---|---|
+| `imagem` | Nativo `@hubspot/email_image` | Banner principal, fotos, qualquer imagem full-width |
+| `rich_text` | Nativo `@hubspot/rich_text` | Texto corrido, saudação com `{{ contact.firstname }}`, parágrafos |
+| `html` | HTML livre (sem path) | Blocos complexos: serviços+checks, 2 colunas, badges, layouts customizados |
+| `cta` | Nativo `@hubspot/email_button` | Botões de ação com rastreamento automático de cliques |
 
 ---
 
@@ -60,28 +73,24 @@ O Render faz o redeploy automaticamente.
 
 | Variável | Obrigatória | Descrição |
 |---|---|---|
-| `HUBSPOT_TOKEN` | ✅ Sim | Token do Private App do HubSpot (precisa do scope `files`) |
+| `HUBSPOT_TOKEN` | ✅ Sim | Token do Private App (scopes: `content`, `files`) |
 | `SLACK_WEBHOOK_URL` | ✅ Sim | Webhook URL do canal Slack do time de CRM |
-| `FIGMA_TOKEN` | ⚠️ Recomendado | Personal Access Token do Figma (para download de assets) |
+| `FIGMA_TOKEN` | ⚠️ Recomendado | Personal Access Token do Figma |
 | `HUBSPOT_TEMPLATE_ID` | ❌ Não | ID do template base (padrão: 212982428723) |
 | `HUBSPOT_ACCOUNT_ID` | ❌ Não | ID da conta HubSpot (padrão: 5338832) |
 | `HUBSPOT_BUSINESS_UNIT_ID` | ❌ Não | ID da business unit (padrão: 255144) |
-| `HUBSPOT_HTML_WIDGET_KEY` | ❌ Não | Chave do módulo HTML no template (autodetectado se omitido) |
 | `PORT` | ❌ Não | Porta do servidor (padrão: 3000) |
 
 ---
 
-## 📁 Organização dos assets no HubSpot File Manager
+## 🚀 Deploy
 
-Os arquivos são salvos por padrão na pasta `/crm-emails`. Você pode passar um parâmetro `pasta` diferente em cada chamada:
-
+```bash
+git add .
+git commit -m "feat: v3.0.0 — montar_email_hibrido substitui criar_email_rascunho"
+git push
 ```
-/crm-emails/banner-dermatologista.png
-/crm-emails/icone-consulta.png
-/crm-emails/logo-amorsaude.png
-```
-
-Os arquivos são configurados como `PUBLIC_NOT_INDEXABLE`: acessíveis por URL mas não indexados por buscadores — ideal para e-mails.
+O Render faz o redeploy automaticamente.
 
 ---
 
@@ -91,22 +100,15 @@ Os arquivos são configurados como `PUBLIC_NOT_INDEXABLE`: acessíveis por URL m
 npm install
 export HUBSPOT_TOKEN=seu_token
 export SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...
-export FIGMA_TOKEN=seu_figma_token
 npm start
 
 # Health check
 curl http://localhost:3000/health
+# → {"status":"ok","server":"hubspot-email-mcp","version":"3.0.0"}
 
-# Teste de upload (substitua pela URL real de um asset)
+# Inspecionar seções do template base
 curl -X POST http://localhost:3000/mcp \
   -H "Authorization: Bearer amorsaude-mcp-secret" \
   -H "Content-Type: application/json" \
-  -d '{"method":"tools/call","params":{"name":"upload_asset","arguments":{"url_origem":"https://sua-url-de-imagem.png","nome_arquivo":"teste.png"}}}'
+  -d '{"method":"tools/call","params":{"name":"inspecionar_secoes","arguments":{"email_id":"212982428723"}}}'
 ```
-
----
-
-## ⚠️ Atenção: scope `files` no HubSpot
-
-A tool `upload_asset` usa o endpoint `POST /files/v3/files` que requer o scope `files` no Private App.
-Se o token atual não tiver esse scope, o HubSpot retornará erro 403. Nesse caso, edite o Private App e adicione o scope — o token existente será atualizado automaticamente sem necessidade de recriar o app.
