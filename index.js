@@ -91,7 +91,7 @@ function aplicarUtm(widgets, utm_campaign) {
 }
 
 // ─── MCP Server ───────────────────────────────────────────────────────────────
-const server = new McpServer({ name: "hubspot-email-mcp", version: "3.3.0" });
+const server = new McpServer({ name: "hubspot-email-mcp", version: "3.4.0" });
 
 // ── Tool 1: montar_email_hibrido ──────────────────────────────────────────────
 server.tool(
@@ -482,7 +482,160 @@ server.tool(
   }
 );
 
-// ── Tool 7: notificar_crm ─────────────────────────────────────────────────────
+// ── Tool 7: preencher_utms_footer ────────────────────────────────────────────
+server.tool(
+  "preencher_utms_footer",
+  `Preenche automaticamente o utm_campaign em todas as URLs do footer fixo do template.
+   
+   O footer do template AmorSaúde contém URLs pré-configuradas com utm_campaign= vazio:
+   Medicina, Odontologia, Consulta presencial, Consulta vídeo, Mapa de clínicas,
+   Blog, Site, Facebook, Instagram, YouTube, LinkedIn e logo do header.
+   
+   Esta tool busca o e-mail clonado, aplica o utm_campaign em todos os campos
+   do template (body_html, templateContext, head_html) e salva via PATCH.
+   
+   QUANDO USAR: sempre após montar_email_hibrido, antes de notificar_crm.
+   
+   FLUXO COMPLETO:
+   1. montar_email_hibrido → cria rascunho
+   2. preencher_utms_footer → aplica UTM no footer
+   3. notificar_crm → avisa o time`,
+  {
+    email_id: z.string().describe("ID do e-mail criado por montar_email_hibrido"),
+    utm_campaign: z.string().describe(
+      "Valor da UTM campaign a aplicar. Use kebab-case sem espaços. " +
+      "Ex: 'dia-do-dermatologista-fev26', 'onboarding-cdt-mai26', 'cross-sell-odonto-jun26'"
+    ),
+  },
+  async ({ email_id, utm_campaign }) => {
+    try {
+      const utmValue = encodeURIComponent(utm_campaign);
+
+      // Regex que captura utm_campaign= com valor vazio
+      // Cobre: utm_campaign= seguido de " ' & espaço ou fim
+      const substituir = (texto) => {
+        if (!texto || typeof texto !== "string") return texto;
+        return texto.replace(
+          /utm_campaign=(?=[&"'\s]|$)/g,
+          `utm_campaign=${utmValue}`
+        );
+      };
+
+      // 1. Buscar o e-mail completo
+      console.log(`[preencher_utms_footer] buscando email_id: ${email_id}`);
+      const getRes = await hs.get(`/marketing/v3/emails/${email_id}`);
+      const emailData = getRes.data;
+
+      // 2. Aplicar UTM nos campos que contêm o HTML do template fixo
+      // O HubSpot armazena o HTML compilado do template em campos top-level:
+      // body_html, template_content, head_html e também em templateContext
+      const payload = {};
+      let substituicoes = 0;
+
+      // Campo body_html — HTML completo compilado incluindo header/footer fixos
+      if (emailData.body_html) {
+        const novo = substituir(emailData.body_html);
+        if (novo !== emailData.body_html) {
+          payload.body_html = novo;
+          // Conta quantas substituições foram feitas
+          const matches = (emailData.body_html.match(/utm_campaign=(?=[&"'\s]|$)/g) || []).length;
+          substituicoes += matches;
+        }
+      }
+
+      // Campo body — fallback para alguns templates
+      if (emailData.body) {
+        const novo = substituir(emailData.body);
+        if (novo !== emailData.body) {
+          payload.body = novo;
+        }
+      }
+
+      // Widgets — também percorre widgets para cobrir miolo (complementa aplicarUtm do montar)
+      const widgets = emailData.content?.widgets || {};
+      const novosWidgets = {};
+      let widgetsAlterados = 0;
+
+      for (const [key, widget] of Object.entries(widgets)) {
+        const body = widget?.body || {};
+        const novoHtml = substituir(body.html);
+        const novoLink = substituir(body.link);
+        const novoImgSrc = body.img?.src ? substituir(body.img.src) : body.img?.src;
+
+        const mudouHtml = novoHtml !== body.html;
+        const mudouLink = novoLink !== body.link;
+        const mudouImg = novoImgSrc !== body.img?.src;
+
+        if (mudouHtml || mudouLink || mudouImg) {
+          novosWidgets[key] = {
+            ...widget,
+            body: {
+              ...body,
+              ...(mudouHtml && { html: novoHtml }),
+              ...(mudouLink && { link: novoLink }),
+              ...(mudouImg && { img: { ...body.img, src: novoImgSrc } }),
+            },
+          };
+          widgetsAlterados++;
+        } else {
+          novosWidgets[key] = widget;
+        }
+      }
+
+      if (widgetsAlterados > 0) {
+        payload.content = {
+          ...emailData.content,
+          widgets: novosWidgets,
+        };
+      }
+
+      if (Object.keys(payload).length === 0) {
+        console.log(`[preencher_utms_footer] nenhuma URL com utm_campaign= vazio encontrada`);
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              sucesso: true,
+              email_id,
+              utm_campaign,
+              aviso: "Nenhuma URL com utm_campaign= vazio encontrada. UTMs podem já estar preenchidas ou o template usa outro formato.",
+              substituicoes: 0,
+            }, null, 2),
+          }],
+        };
+      }
+
+      // 3. PATCH com os campos atualizados
+      await hs.patch(`/marketing/v3/emails/${email_id}`, payload);
+
+      const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
+      const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
+      const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${email_id}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
+
+      console.log(`[preencher_utms_footer] ✅ utm_campaign="${utm_campaign}" aplicado | widgets alterados: ${widgetsAlterados}`);
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            sucesso: true,
+            email_id,
+            utm_campaign,
+            widgets_alterados: widgetsAlterados,
+            body_html_atualizado: !!payload.body_html,
+            editUrl,
+          }, null, 2),
+        }],
+      };
+    } catch (err) {
+      const detail = err.response?.data?.message || err.response?.data || err.message;
+      console.error(`[preencher_utms_footer] ❌`, detail);
+      return { content: [{ type: "text", text: `❌ Erro: ${JSON.stringify(detail)}` }], isError: true };
+    }
+  }
+);
+
+// ── Tool 8: notificar_crm ─────────────────────────────────────────────────────
 server.tool(
   "notificar_crm",
   "Envia mensagem no Slack avisando que um rascunho está pronto para disparo.",
@@ -584,5 +737,6 @@ app.get("/health", (_req, res) => res.json({ status: "ok", version: "3.2.0" }));
 app.listen(PORT, () => {
   console.log(`✅ HubSpot MCP v3.2.0 rodando na porta ${PORT}`);
   console.log(`   Template base: 213359251380`);
-  console.log(`   Widgets fixos: ${Object.keys(TEMPLATE_WIDGETS).join(", ")}`);
+  console.log(`   Tools: montar_email_hibrido, preencher_utms_footer, upload_asset, notificar_crm
+   Widgets fixos: ${Object.keys(TEMPLATE_WIDGETS).join(", ")}`);
 });
