@@ -22,7 +22,7 @@ const hs = axios.create({
   headers: { Authorization: `Bearer ${HUBSPOT_TOKEN}`, "Content-Type": "application/json" },
 });
 
-// ─── Widget keys fixos do template base (ID: 213359251380) ───────────────────
+// ─── Widget keys do template base (ID: 213359251380) ─────────────────────────
 const TEMPLATE_WIDGETS = {
   banner_hero:          { tipo: "image_email", funcao: "Banner ou imagem hero da campanha" },
   texto_intro:          { tipo: "rich_text",   funcao: "Saudação, olá, texto introdutório. Suporta {{ contact.firstname }}" },
@@ -34,7 +34,182 @@ const TEMPLATE_WIDGETS = {
   cta_secundario:       { tipo: "rich_text",   funcao: "Botão de ação secundário (ex: ler no blog)" },
   bloco_especial:       { tipo: "rich_text",   funcao: "Elemento especial da campanha: data comemorativa, ícone único, Amorzito+mapa, lista de serviços com checks" },
   bloco_especialidades: { tipo: "rich_text",   funcao: "Menu de especialidades (Medicina|Odonto|Exames|Cirurgias) + heart + tagline AmorSaúde" },
+  footer_fixo:          { tipo: "rich_text",   funcao: "Footer completo: Amorzito+mapa, especialidades, redes sociais, CTAs, legal. Preenchido automaticamente pelo MCP com as UTMs da campanha." },
 };
+
+// ─── HTML base do footer_fixo — UTMs preenchidas pelo MCP no momento da criação
+// Estrutura visual idêntica ao footer anterior (v3), agora como widget do miolo.
+function gerarHtmlFooter(utm_campaign) {
+  const utm = encodeURIComponent(utm_campaign || "");
+
+  return `
+<!-- Footer A — Amorzito + Mapa -->
+<table width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ebeff0;">
+  <tr>
+    <td style="background-color:#ebeff0;padding:28px 48px 0 48px;">
+      <table class="esp-amorzito" width="504" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="esp-amorzito-td" width="244" valign="middle"
+              style="width:244px;padding-right:50px;padding-bottom:12px;">
+            <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/Frame%201321314360.png"
+                 alt="Amorzito — Cuidando de você" width="244"
+                 style="display:block;width:244px;max-width:100%;height:auto;border-radius:10px;" />
+          </td>
+          <td class="esp-amorzito-td" width="210" valign="middle"
+              style="width:210px;text-align:center;">
+            <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/especialidades-mapa-brasil.png"
+                 alt="Mapa do Brasil" width="62"
+                 style="display:block;margin:0 auto 8px auto;width:62px;height:auto;" />
+            <p style="font-family:Arial,sans-serif;font-size:12px;color:#56c5d0;font-weight:600;text-align:center;margin:0;line-height:1.4;">
+              Atendimento nas principais áreas<br>
+              de atuações com o mais preparado<br>
+              quadro médico do Brasil.
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+  <tr>
+    <td style="background-color:#ebeff0;padding:16px 48px 24px 48px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="esp-btn-td" width="115" style="padding-right:15px;padding-bottom:8px;">
+            <a href="https://amorsaude.com.br/medicina/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank" style="display:block;line-height:0;font-size:0;">
+              <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/btn-medicina.png"
+                   alt="Medicina" width="115" style="display:block;width:100%;max-width:130px;height:auto;border:0;" />
+            </a>
+          </td>
+          <td class="esp-btn-td" width="115" style="padding-right:15px;padding-bottom:8px;">
+            <a href="https://amorsaude.com.br/odontologia/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank" style="display:block;line-height:0;font-size:0;">
+              <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/btn-odontologia.png"
+                   alt="Odontologia" width="115" style="display:block;width:100%;max-width:130px;height:auto;border:0;" />
+            </a>
+          </td>
+          <td class="esp-btn-td" width="115" style="padding-right:15px;padding-bottom:8px;">
+            <a href="https://mkt.amorsaude.com.br/as-redirect?campanha=exame&unidade={{ contact.unidade_de_interesse___procedimento }}" target="_blank" style="display:block;line-height:0;font-size:0;">
+              <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/btn-exames.png"
+                   alt="Exames" width="115" style="display:block;width:100%;max-width:130px;height:auto;border:0;" />
+            </a>
+          </td>
+          <td class="esp-btn-td" width="115" style="padding-bottom:8px;">
+            <a href="https://api.whatsapp.com/send/?phone=16997303972&text=Ol%C3%A1,%20quero%20conversar%20sobre%20cirurgias" target="_blank" style="display:block;line-height:0;font-size:0;">
+              <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/btn-cirurgias.png"
+                   alt="Cirurgias" width="115" style="display:block;width:100%;max-width:130px;height:auto;border:0;" />
+            </a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<!-- Footer B — Redes sociais + Blog + Site -->
+<table width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#56c5d0;">
+  <tr>
+    <td style="background-color:#56c5d0;padding:18px 24px 10px 24px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td valign="middle">
+            <table cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td valign="middle" style="padding-right:8px;">
+                  <p style="font-family:Arial,sans-serif;font-size:12px;font-weight:bold;color:#1b5a64;margin:0;white-space:nowrap;">Acesse nossas redes sociais.</p>
+                </td>
+                <td valign="middle" style="padding-right:8px;">
+                  <a href="https://www.facebook.com/amorsaudebrasil/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank" style="display:block;line-height:0;">
+                    <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/social-icons/social-facebook.png" alt="Facebook" width="13" height="13" style="display:block;border:0;" />
+                  </a>
+                </td>
+                <td valign="middle" style="padding-right:8px;">
+                  <a href="https://www.youtube.com/channel/UCd9oI3h_8AjFyrz2ljDSEFg/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank" style="display:block;line-height:0;">
+                    <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/social-icons/social-youtube.png" alt="YouTube" width="18" height="13" style="display:block;border:0;" />
+                  </a>
+                </td>
+                <td valign="middle" style="padding-right:8px;">
+                  <a href="https://www.linkedin.com/company/amorsaudebrasil/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank" style="display:block;line-height:0;">
+                    <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/social-icons/social-linkedin.png" alt="LinkedIn" width="13" height="13" style="display:block;border:0;" />
+                  </a>
+                </td>
+                <td valign="middle">
+                  <a href="https://www.instagram.com/amorsaudebrasil/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank" style="display:block;line-height:0;">
+                    <img src="https://5338832.fs1.hubspotusercontent-na1.net/hubfs/5338832/crm-emails/template-base/social-icons/social-instagram.png" alt="Instagram" width="13" height="13" style="display:block;border:0;" />
+                  </a>
+                </td>
+              </tr>
+            </table>
+          </td>
+          <td align="right" valign="middle">
+            <table cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding-right:8px;">
+                  <a href="https://blog.amorsaude.com.br/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank"
+                     style="display:inline-block;background-color:#ffffff;color:#56c5d0;font-family:Arial,sans-serif;font-size:11px;font-weight:bold;padding:5px 14px;border-radius:5px;text-decoration:none;">Blog</a>
+                </td>
+                <td>
+                  <a href="https://amorsaude.com.br/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank"
+                     style="display:inline-block;background-color:#ffffff;color:#56c5d0;font-family:Arial,sans-serif;font-size:11px;font-weight:bold;padding:5px 14px;border-radius:5px;text-decoration:none;">Site</a>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Footer C — CTAs de agendamento -->
+  <tr>
+    <td style="background-color:#56c5d0;padding:8px 24px 10px 24px;">
+      <table cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+          <td class="cta-td" style="padding-right:6px;padding-bottom:4px;white-space:nowrap;">
+            <a href="https://paciente.amorsaude.com.br/agendar_consulta?utm_medium=emailhs&utm_source=Amorsaude&utm_campaign=${utm}" target="_blank"
+               style="display:inline-block;background-color:#da473f;color:#ffffff;font-family:Arial,sans-serif;font-size:10px;font-weight:bold;padding:5px 14px;border-radius:4px;text-decoration:none;">Consulta presencial</a>
+          </td>
+          <td class="cta-td" style="padding-right:6px;padding-bottom:4px;white-space:nowrap;">
+            <a href="https://telemedicinaamorsaude.agendar.cc/?utm_medium=emailhs&utm_source=Amorsaude&utm_campaign=${utm}" target="_blank"
+               style="display:inline-block;background-color:#da473f;color:#ffffff;font-family:Arial,sans-serif;font-size:10px;font-weight:bold;padding:5px 14px;border-radius:4px;text-decoration:none;">Consulta por chamada de vídeo</a>
+          </td>
+          <td class="cta-td" style="padding-bottom:4px;white-space:nowrap;">
+            <a href="https://amorsaude.com.br/unidades/?utm_source=Amorsaude&utm_medium=emailhs&utm_campaign=${utm}" target="_blank"
+               style="display:inline-block;background-color:#da473f;color:#ffffff;font-family:Arial,sans-serif;font-size:10px;font-weight:bold;padding:5px 14px;border-radius:4px;text-decoration:none;">Mapa de clínicas</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Footer D — Legal + descadastro -->
+  <tr>
+    <td style="background-color:#56c5d0;padding:8px 24px 24px 24px;">
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">
+        Caso não queira mais receber nossos e-mails <a href="{{ unsubscribe_link }}" style="color:#1b5a64;font-weight:bold;text-decoration:underline;">Clique aqui</a>. Aguarde até 3 dias úteis para que seu contato seja retirado de nossa base de clientes. Para maiores informações, leia nosso <a href="https://www.amorsaude.com.br/politica-de-privacidade/" style="color:#1b5a64;font-weight:bold;text-decoration:underline;">Termo de Uso</a> e <a href="https://www.amorsaude.com.br/politica-de-privacidade/" style="color:#1b5a64;font-weight:bold;text-decoration:underline;">Política de Dados</a>.
+      </p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">&nbsp;</p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">
+        *AmorSaúde não comercializa <strong>CONVÊNIOS</strong> nem <strong>CARTÕES DE DESCONTO</strong>, sendo sua atuação exclusivamente em medicina, odontologia e exames.
+      </p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">&nbsp;</p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">
+        <strong>AmorSaúde</strong><br>
+        Rua Magid Antônio Calil, 176 - Jardim Botânico, Ribeirão Preto, São Paulo 14021-644, Brasil.
+      </p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">&nbsp;</p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">
+        Responsáveis Técnicos:<br>
+        Alexandre Pimenta CRM 51971 MG | Wanderson Lage CRO: 24186 MG
+      </p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0 0 4px 0;">&nbsp;</p>
+      <p style="font-family:Arial,sans-serif;font-size:9px;color:#1b5a64;line-height:1.4;margin:0;">
+        {{ site_settings.company_name }}, {{ site_settings.company_street_address_1 }}, {{ site_settings.company_city }}, {{ site_settings.company_state }} {{ site_settings.company_zip }}<br>
+        <a href="{{ unsubscribe_link_all }}" style="color:#1b5a64;text-decoration:underline;">Descadastrar de todos os e-mails</a> | <a href="{{ unsubscribe_link }}" style="color:#1b5a64;text-decoration:underline;">Gerenciar preferências</a>
+      </p>
+    </td>
+  </tr>
+</table>
+`.trim();
+}
 
 // ─── Helper: clonar template e retornar dados completos ──────────────────────
 async function clonarTemplate(nome) {
@@ -44,40 +219,33 @@ async function clonarTemplate(nome) {
   return getRes.data;
 }
 
-// ─── Helper: aplicar utm_campaign em todas as URLs dos widgets do miolo ───────
+// ─── Helper: aplicar utm_campaign em widgets do miolo (segurança extra) ───────
 function aplicarUtm(widgets, utm_campaign) {
   if (!utm_campaign) return widgets;
 
   const utmValue = encodeURIComponent(utm_campaign);
-
   const substituir = (texto) => {
     if (!texto || typeof texto !== "string") return texto;
-    return texto.replace(
-      /utm_campaign=(?=[&"'\s]|$)/g,
-      `utm_campaign=${utmValue}`
-    );
+    return texto.replace(/utm_campaign=(?=[&"'\s]|$)/g, `utm_campaign=${utmValue}`);
   };
 
   const resultado = {};
   for (const [key, widget] of Object.entries(widgets)) {
     const body = widget?.body || {};
     const novoBody = { ...body };
-
-    if (typeof body.html === "string")        novoBody.html  = substituir(body.html);
-    if (typeof body.value === "string")       novoBody.value = substituir(body.value);
-    if (typeof body.link === "string")        novoBody.link  = substituir(body.link);
+    if (typeof body.html  === "string") novoBody.html  = substituir(body.html);
+    if (typeof body.value === "string") novoBody.value = substituir(body.value);
+    if (typeof body.link  === "string") novoBody.link  = substituir(body.link);
     if (body.img?.src && typeof body.img.src === "string") {
       novoBody.img = { ...body.img, src: substituir(body.img.src) };
     }
-
     resultado[key] = { ...widget, body: novoBody };
   }
-
   return resultado;
 }
 
 // ─── MCP Server ───────────────────────────────────────────────────────────────
-const server = new McpServer({ name: "hubspot-email-mcp", version: "3.6.0" });
+const server = new McpServer({ name: "hubspot-email-mcp", version: "4.0.0" });
 
 // ── Tool 1: montar_email_hibrido ──────────────────────────────────────────────
 server.tool(
@@ -85,12 +253,17 @@ server.tool(
   `Clona o template base AmorSaúde e monta o e-mail preenchendo os widgets existentes
    com o conteúdo de cada bloco identificado no Figma.
 
+   ARQUITETURA v4:
+   O footer é agora um widget do miolo (footer_fixo). O MCP o gera automaticamente
+   com todas as UTMs já preenchidas — não é necessário chamar preencher_utms_footer.
+
    FLUXO QUE O CLAUDE DEVE SEGUIR:
    1. Analisar o design do Figma (get_design_context)
    2. Fazer upload de todos os assets via upload_asset
    3. Para cada elemento visual do Figma, escolher o widget_key mais adequado
    4. Montar o array de blocos na ORDEM do design (de cima para baixo)
-   5. Chamar esta tool com o array montado
+   5. NÃO incluir footer_fixo nos blocos — ele é adicionado automaticamente
+   6. Chamar esta tool com o array montado
 
    WIDGETS DISPONÍVEIS NO TEMPLATE (usar widget_key exato):
    • "banner_hero"          → image_email  — Banner/imagem hero. Usar conteudo.src + conteudo.alt
@@ -104,19 +277,20 @@ server.tool(
    • "bloco_especial"       → rich_text    — Elemento único da campanha: data comemorativa, Amorzito+mapa,
                                              lista de serviços com checks, layout 2 colunas, bloco colorido
    • "bloco_especialidades" → rich_text    — Menu Medicina|Odonto|Exames|Cirurgias + heart + tagline
+   • "footer_fixo"          → rich_text    — AUTOMÁTICO. Não incluir nos blocos. Gerado pelo MCP com UTMs.
 
    REGRAS DE DECISÃO:
    • Nem todos os widgets precisam ser usados — inclua apenas os que têm correspondência no Figma
    • A ORDEM dos blocos define a ordem visual no e-mail — respeite o layout do Figma
    • Um mesmo widget_key não pode aparecer duas vezes
-   • Widgets não incluídos ficam com conteúdo placeholder do template (não aparecem em branco)
-   • Para blocos complexos sem widget dedicado (ex: 3º ícone), use "bloco_especial" com HTML customizado
-   • CTAs são sempre tabelas HTML com <a> estilizado — NÃO usar @hubspot/email_button (não suportado)
+   • CTAs são sempre tabelas HTML com <a> estilizado — NÃO usar @hubspot/email_button
    • Imagens dentro de rich_text: usar <img src="URL_HUBSPOT"> com URL do File Manager
+   • O footer_fixo é sempre o último bloco e é adicionado automaticamente
 
    EXEMPLO DE MAPEAMENTO FIGMA → WIDGETS:
-   Figma tem: banner + olá + ícone1+destaque1 + texto + ícone2+destaque2 + botão vermelho + texto blog + botão azul + data + especialidades
-   Blocos:    banner_hero, texto_intro, bloco_icone_1, texto_corpo, bloco_icone_2, cta_principal, texto_blog, cta_secundario, bloco_especial, bloco_especialidades`,
+   Figma tem: banner + olá + texto + botão vermelho + data + especialidades
+   Blocos:    banner_hero, texto_intro, texto_corpo, cta_principal, bloco_especial, bloco_especialidades
+   (footer_fixo é adicionado automaticamente ao final)`,
   {
     nome: z.string().describe("Nome interno do e-mail"),
     assunto: z.string().describe("Assunto do e-mail"),
@@ -124,9 +298,8 @@ server.tool(
     nome_remetente: z.string().optional(),
     email_remetente: z.string().optional(),
     utm_campaign: z.string().optional().describe(
-      "Valor da UTM campaign aplicado automaticamente em todas as URLs com utm_campaign= vazio. " +
+      "Valor da UTM campaign. Aplicado automaticamente em TODOS os links: miolo + footer completo. " +
       "Use kebab-case sem espaços (ex: 'dia-do-dermatologista-fev26', 'onboarding-cdt-mai26'). " +
-      "Aplicado nos blocos do miolo e no link do banner. " +
       "URLs que já têm utm_campaign preenchido não são alteradas."
     ),
     blocos: z.array(
@@ -142,11 +315,7 @@ server.tool(
           "cta_secundario",
           "bloco_especial",
           "bloco_especialidades",
-        ]).describe(
-          "Widget key do template a preencher. " +
-          "O Claude escolhe baseado na função de cada elemento do Figma. " +
-          "Cada key só pode aparecer uma vez."
-        ),
+        ]).describe("Widget key do template. Não incluir footer_fixo — é adicionado automaticamente."),
         conteudo: z.object({
           src:   z.string().optional().describe("URL pública da imagem no HubSpot File Manager"),
           alt:   z.string().optional().describe("Texto alternativo da imagem"),
@@ -154,22 +323,13 @@ server.tool(
           link:  z.string().optional().describe("URL de destino ao clicar na imagem"),
           html:  z.string().optional().describe(
             "HTML do bloco para widgets rich_text. " +
-            "Deve ser HTML de e-mail válido (tabelas, inline styles, sem CSS externo). " +
+            "HTML de e-mail válido (tabelas, inline styles, sem CSS externo). " +
             "Para CTAs: tabela com <a> estilizado como botão. " +
-            "Para ícones: <img> centralizado + <img> do subtítulo. " +
             "Para blocos complexos: HTML completo do layout."
           ),
-        }).describe("Conteúdo do widget conforme seu tipo"),
-        cor_fundo_secao: z.string().optional().describe(
-          "Cor de fundo da seção (hex). " +
-          "Use para blocos com fundo colorido como #56c5d0 (teal) ou #ffffff (branco). " +
-          "Padrão: #ffffff"
-        ),
+        }),
+        cor_fundo_secao: z.string().optional().describe("Cor de fundo da seção (hex). Ex: #ffffff, #56c5d0"),
       })
-    ).describe(
-      "Array de blocos na ORDEM do design Figma (cima→baixo). " +
-      "Cada item mapeia um elemento visual do Figma para um widget_key do template. " +
-      "Incluir apenas os widgets que têm correspondência real no Figma."
     ),
   },
   async ({ nome, assunto, preview_text, nome_remetente, email_remetente, utm_campaign, blocos }) => {
@@ -185,6 +345,7 @@ server.tool(
       const sections = emailData.content?.flexAreas?.main?.sections || [];
       const widgetsOriginais = emailData.content?.widgets || {};
 
+      // Mapa de seção por widget_key
       const secaoPorKey = {};
       for (const section of sections) {
         for (const col of section.columns || []) {
@@ -197,6 +358,7 @@ server.tool(
       const novasSecoes = [];
       const widgetsAtualizados = { ...widgetsOriginais };
 
+      // Montar blocos do miolo na ordem definida pelo Claude
       for (const bloco of blocos) {
         const { widget_key, conteudo, cor_fundo_secao } = bloco;
         const secaoOriginal = secaoPorKey[widget_key];
@@ -206,14 +368,13 @@ server.tool(
           continue;
         }
 
-        const secaoAtualizada = {
+        novasSecoes.push({
           ...secaoOriginal,
           style: {
             ...secaoOriginal.style,
             backgroundColor: cor_fundo_secao || secaoOriginal.style?.backgroundColor || "#ffffff",
           },
-        };
-        novasSecoes.push(secaoAtualizada);
+        });
 
         const tipoWidget = TEMPLATE_WIDGETS[widget_key]?.tipo;
         const widgetAtual = widgetsAtualizados[widget_key] || {};
@@ -245,6 +406,7 @@ server.tool(
         console.log(`[montar_email_hibrido] ✓ ${widget_key} (${tipoWidget}) atualizado`);
       }
 
+      // Preview text
       if (preview_text && widgetsAtualizados["preview_text"]) {
         widgetsAtualizados["preview_text"] = {
           ...widgetsAtualizados["preview_text"],
@@ -252,10 +414,27 @@ server.tool(
         };
       }
 
-      const widgetsComUtm = aplicarUtm(widgetsAtualizados, utm_campaign);
-      if (utm_campaign) {
-        console.log(`[montar_email_hibrido] ✓ utm_campaign aplicado: ${utm_campaign}`);
+      // Adicionar footer_fixo automaticamente ao final com UTMs já preenchidas
+      const secaoFooter = secaoPorKey["footer_fixo"];
+      if (secaoFooter) {
+        novasSecoes.push({
+          ...secaoFooter,
+          style: { ...secaoFooter.style, backgroundColor: "#ebeff0" },
+        });
+        widgetsAtualizados["footer_fixo"] = {
+          ...(widgetsAtualizados["footer_fixo"] || {}),
+          body: {
+            ...(widgetsAtualizados["footer_fixo"]?.body || {}),
+            html: gerarHtmlFooter(utm_campaign),
+          },
+        };
+        console.log(`[montar_email_hibrido] ✓ footer_fixo gerado com utm_campaign="${utm_campaign || ""}"`);
+      } else {
+        console.warn(`[montar_email_hibrido] ⚠️ widget footer_fixo não encontrado no template — verifique se o template foi atualizado para v4`);
       }
+
+      // Aplicar utm_campaign como segurança extra nos demais widgets do miolo
+      const widgetsComUtm = aplicarUtm(widgetsAtualizados, utm_campaign);
 
       await hs.patch(`/marketing/v3/emails/${clonedId}`, {
         name: nome,
@@ -291,7 +470,7 @@ server.tool(
             subject: assunto,
             state: "DRAFT",
             utm_campaign: utm_campaign || null,
-            widgets_usados: blocos.map(b => b.widget_key),
+            widgets_usados: [...blocos.map(b => b.widget_key), "footer_fixo"],
             total_secoes: novasSecoes.length,
             editUrl,
           }, null, 2),
@@ -458,157 +637,10 @@ server.tool(
   }
 );
 
-// ── Tool 7: preencher_utms_footer ─────────────────────────────────────────────
-// As URLs do footer ficam no HTML estático do template (Design Manager),
-// armazenado em content.templateBody no e-mail clonado — não em content.widgets.
-// Esta tool cobre ambos os campos para garantir 100% de cobertura.
-server.tool(
-  "preencher_utms_footer",
-  `Preenche automaticamente o utm_campaign em todas as URLs do footer fixo do template.
-
-   O footer do template AmorSaúde contém URLs pré-configuradas com utm_campaign= vazio:
-   Logo do header, Medicina, Odontologia, Facebook, YouTube, LinkedIn, Instagram,
-   Blog, Site, Consulta presencial, Consulta por vídeo e Mapa de clínicas.
-
-   As URLs ficam no HTML estático do template (content.templateBody), não nos widgets
-   editáveis. Esta tool atualiza templateBody + widgets para cobertura completa.
-
-   QUANDO USAR: sempre após montar_email_hibrido, antes de notificar_crm.
-
-   FLUXO COMPLETO:
-   1. montar_email_hibrido → cria rascunho
-   2. preencher_utms_footer → aplica UTM no footer
-   3. notificar_crm → avisa o time`,
-  {
-    email_id: z.string().describe("ID do e-mail criado por montar_email_hibrido"),
-    utm_campaign: z.string().describe(
-      "Valor da UTM campaign a aplicar. Use kebab-case sem espaços. " +
-      "Ex: 'dia-do-dermatologista-fev26', 'onboarding-cdt-mai26', 'cross-sell-odonto-jun26'"
-    ),
-  },
-  async ({ email_id, utm_campaign }) => {
-    try {
-      const utmValue = encodeURIComponent(utm_campaign);
-
-      const substituir = (texto) => {
-        if (!texto || typeof texto !== "string") return texto;
-        return texto.replace(
-          /utm_campaign=(?=[&"'\s]|$)/g,
-          `utm_campaign=${utmValue}`
-        );
-      };
-
-      console.log(`[preencher_utms_footer] buscando email_id: ${email_id}`);
-      const getRes = await hs.get(`/marketing/v3/emails/${email_id}`);
-      const emailData = getRes.data;
-
-      const payload = { content: { ...emailData.content } };
-      let substituicoes = 0;
-
-      // ── 1. templateBody — HTML estático do template (header/footer fixos) ──
-      const templateBody = emailData.content?.templateBody;
-      if (templateBody) {
-        const novo = substituir(templateBody);
-        if (novo !== templateBody) {
-          const matches = (templateBody.match(/utm_campaign=(?=[&"'\s]|$)/g) || []).length;
-          substituicoes += matches;
-          payload.content.templateBody = novo;
-          console.log(`[preencher_utms_footer] templateBody: ${matches} substituições`);
-        }
-      }
-
-      // ── 2. widgets — miolo editável (complementar) ──
-      const widgets = emailData.content?.widgets || {};
-      const novosWidgets = {};
-      let widgetsAlterados = 0;
-
-      for (const [key, widget] of Object.entries(widgets)) {
-        const body = widget?.body || {};
-
-        const novoHtml   = substituir(body.html);
-        const novoValue  = substituir(body.value);
-        const novoLink   = substituir(body.link);
-        const novoImgSrc = body.img?.src ? substituir(body.img.src) : body.img?.src;
-
-        const mudouHtml  = novoHtml  !== body.html;
-        const mudouValue = novoValue !== body.value;
-        const mudouLink  = novoLink  !== body.link;
-        const mudouImg   = novoImgSrc !== body.img?.src;
-
-        if (mudouHtml || mudouValue || mudouLink || mudouImg) {
-          novosWidgets[key] = {
-            ...widget,
-            body: {
-              ...body,
-              ...(mudouHtml  && { html:  novoHtml  }),
-              ...(mudouValue && { value: novoValue }),
-              ...(mudouLink  && { link:  novoLink  }),
-              ...(mudouImg   && { img: { ...body.img, src: novoImgSrc } }),
-            },
-          };
-          widgetsAlterados++;
-          substituicoes++;
-        } else {
-          novosWidgets[key] = widget;
-        }
-      }
-
-      if (widgetsAlterados > 0) {
-        payload.content.widgets = novosWidgets;
-      }
-
-      if (substituicoes === 0) {
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              sucesso: true,
-              email_id,
-              utm_campaign,
-              aviso: "Nenhuma URL com utm_campaign= vazio encontrada. Use debug_email_raw para inspecionar os campos disponíveis.",
-              substituicoes: 0,
-            }, null, 2),
-          }],
-        };
-      }
-
-      await hs.patch(`/marketing/v3/emails/${email_id}`, payload);
-
-      const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
-      const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
-      const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${email_id}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
-
-      console.log(`[preencher_utms_footer] ✅ ${substituicoes} substituições | templateBody: ${!!payload.content?.templateBody} | widgets: ${widgetsAlterados}`);
-
-      return {
-        content: [{
-          type: "text",
-          text: JSON.stringify({
-            sucesso: true,
-            email_id,
-            utm_campaign,
-            substituicoes_total: substituicoes,
-            template_body_atualizado: !!payload.content?.templateBody,
-            widgets_alterados: widgetsAlterados,
-            editUrl,
-          }, null, 2),
-        }],
-      };
-    } catch (err) {
-      const detail = err.response?.data?.message || err.response?.data || err.message;
-      console.error(`[preencher_utms_footer] ❌`, detail);
-      return { content: [{ type: "text", text: `❌ Erro: ${JSON.stringify(detail)}` }], isError: true };
-    }
-  }
-);
-
-// ── Tool 8: debug_email_raw ───────────────────────────────────────────────────
-// Tool temporária de diagnóstico — use para inspecionar a estrutura bruta
-// do response da API e identificar onde as URLs do footer estão armazenadas.
-// Remova após confirmar que preencher_utms_footer funciona corretamente.
+// ── Tool 7: debug_email_raw ───────────────────────────────────────────────────
 server.tool(
   "debug_email_raw",
-  "Retorna as chaves top-level e de content de um e-mail para diagnóstico. Use quando preencher_utms_footer retornar substituicoes=0.",
+  "Retorna as chaves top-level e de content de um e-mail para diagnóstico.",
   { email_id: z.string() },
   async ({ email_id }) => {
     try {
@@ -621,13 +653,11 @@ server.tool(
             top_level_keys: Object.keys(data),
             content_keys: Object.keys(data.content || {}),
             widget_keys: Object.keys(data.content?.widgets || {}),
-            // Campos string de content com preview de 300 chars
             content_string_fields: Object.fromEntries(
               Object.entries(data.content || {})
                 .filter(([, v]) => typeof v === "string")
                 .map(([k, v]) => [k, v.substring(0, 300)])
             ),
-            // Amostra dos 3 primeiros widgets com seus bodyKeys e preview
             widget_sample: Object.entries(data.content?.widgets || {})
               .slice(0, 3)
               .map(([k, v]) => ({
@@ -645,7 +675,7 @@ server.tool(
   }
 );
 
-// ── Tool 9: notificar_crm ─────────────────────────────────────────────────────
+// ── Tool 8: notificar_crm ─────────────────────────────────────────────────────
 server.tool(
   "notificar_crm",
   "Envia mensagem no Slack avisando que um rascunho está pronto para disparo.",
@@ -681,7 +711,7 @@ const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || "amorsaude-client-id";
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || "amorsaude-client-secret";
 const authCodes = new Map();
 
-app.get("/", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "3.6.0", status: "ok" }));
+app.get("/", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "4.0.0", status: "ok" }));
 
 app.get("/.well-known/oauth-authorization-server", (_req, res) => res.json({
   issuer: BASE_URL,
@@ -741,12 +771,12 @@ app.post("/mcp", async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
-app.get("/mcp", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "3.6.0" }));
-app.get("/health", (_req, res) => res.json({ status: "ok", version: "3.6.0" }));
+app.get("/mcp", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "4.0.0" }));
+app.get("/health", (_req, res) => res.json({ status: "ok", version: "4.0.0" }));
 
 app.listen(PORT, () => {
-  console.log(`✅ HubSpot MCP v3.6.0 rodando na porta ${PORT}`);
+  console.log(`✅ HubSpot MCP v4.0.0 rodando na porta ${PORT}`);
   console.log(`   Template base: ${process.env.HUBSPOT_TEMPLATE_ID || "213359251380"}`);
-  console.log(`   Tools: montar_email_hibrido, preencher_utms_footer, debug_email_raw, inspecionar_secoes, inspecionar_widgets, upload_asset, notificar_crm`);
-  console.log(`   Widgets fixos: ${Object.keys(TEMPLATE_WIDGETS).join(", ")}`);
+  console.log(`   Tools: montar_email_hibrido, inspecionar_secoes, inspecionar_widgets, listar_emails, atualizar_email_rascunho, upload_asset, debug_email_raw, notificar_crm`);
+  console.log(`   Widgets: ${Object.keys(TEMPLATE_WIDGETS).join(", ")}`);
 });
