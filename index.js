@@ -47,8 +47,51 @@ async function clonarTemplate(nome) {
   return getRes.data;
 }
 
+// ─── Helper: aplicar utm_campaign em todas as URLs dos widgets ───────────────
+// Percorre todos os widgets e substitui utm_campaign= (vazio) pelo valor fornecido.
+// Cobre: html dos rich_text, link do banner_hero, e qualquer href nos blocos.
+function aplicarUtm(widgets, utm_campaign) {
+  if (!utm_campaign) return widgets;
+
+  const encode = (v) => encodeURIComponent(v);
+  const utmValue = encode(utm_campaign);
+
+  // Regex: captura utm_campaign= seguido de fim de string, &, " ou '
+  // Substitui apenas valores vazios — preserva UTMs já preenchidos
+  const substituir = (texto) =>
+    texto.replace(
+      /utm_campaign=(?=[&"'\s]|$)/g,
+      `utm_campaign=${utmValue}`
+    );
+
+  const resultado = {};
+  for (const [key, widget] of Object.entries(widgets)) {
+    const body = widget?.body || {};
+    const novoBody = { ...body };
+
+    // rich_text e html customizado
+    if (typeof body.html === "string") {
+      novoBody.html = substituir(body.html);
+    }
+
+    // image_email: link de clique no banner
+    if (typeof body.link === "string") {
+      novoBody.link = substituir(body.link);
+    }
+
+    // img.src (raro ter UTM aqui, mas cobre por precaução)
+    if (body.img?.src && typeof body.img.src === "string") {
+      novoBody.img = { ...body.img, src: substituir(body.img.src) };
+    }
+
+    resultado[key] = { ...widget, body: novoBody };
+  }
+
+  return resultado;
+}
+
 // ─── MCP Server ───────────────────────────────────────────────────────────────
-const server = new McpServer({ name: "hubspot-email-mcp", version: "3.2.0" });
+const server = new McpServer({ name: "hubspot-email-mcp", version: "3.3.0" });
 
 // ── Tool 1: montar_email_hibrido ──────────────────────────────────────────────
 server.tool(
@@ -94,6 +137,12 @@ server.tool(
     preview_text: z.string().optional().describe("Texto de preview na caixa de entrada"),
     nome_remetente: z.string().optional(),
     email_remetente: z.string().optional(),
+    utm_campaign: z.string().optional().describe(
+      "Valor da UTM campaign aplicado automaticamente em todas as URLs com utm_campaign= vazio. " +
+      "Use kebab-case sem espaços (ex: 'dia-do-dermatologista-fev26', 'onboarding-cdt-mai26'). " +
+      "Aplicado nos blocos do miolo e no link do banner. " +
+      "URLs que já têm utm_campaign preenchido não são alteradas."
+    ),
     blocos: z.array(
       z.object({
         widget_key: z.enum([
@@ -139,7 +188,7 @@ server.tool(
       "Incluir apenas os widgets que têm correspondência real no Figma."
     ),
   },
-  async ({ nome, assunto, preview_text, nome_remetente, email_remetente, blocos }) => {
+  async ({ nome, assunto, preview_text, nome_remetente, email_remetente, utm_campaign, blocos }) => {
     try {
       const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
       const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
@@ -231,7 +280,13 @@ server.tool(
         };
       }
 
-      // 5. PATCH com seções reordenadas e widgets atualizados
+      // 5. Aplicar utm_campaign em todas as URLs com utm_campaign= vazio
+      const widgetsComUtm = aplicarUtm(widgetsAtualizados, utm_campaign);
+      if (utm_campaign) {
+        console.log(`[montar_email_hibrido] ✓ utm_campaign aplicado: ${utm_campaign}`);
+      }
+
+      // 6. PATCH com seções reordenadas e widgets atualizados
       await hs.patch(`/marketing/v3/emails/${clonedId}`, {
         name: nome,
         subject: assunto,
@@ -249,7 +304,7 @@ server.tool(
               sections: novasSecoes,
             },
           },
-          widgets: widgetsAtualizados,
+          widgets: widgetsComUtm,
         },
       });
 
@@ -265,6 +320,7 @@ server.tool(
             name: nome,
             subject: assunto,
             state: "DRAFT",
+            utm_campaign: utm_campaign || null,
             widgets_usados: blocos.map(b => b.widget_key),
             total_secoes: novasSecoes.length,
             editUrl,
