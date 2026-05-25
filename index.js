@@ -23,9 +23,6 @@ const hs = axios.create({
 });
 
 // ─── Widget keys fixos do template base (ID: 213359251380) ───────────────────
-// Esses são os widgets que existem no template DnD criado no Design Manager.
-// O Claude escolhe quais usar e em qual ordem baseado no Figma de cada campanha.
-// Cada widget key corresponde a uma seção com função semântica clara.
 const TEMPLATE_WIDGETS = {
   banner_hero:          { tipo: "image_email", funcao: "Banner ou imagem hero da campanha" },
   texto_intro:          { tipo: "rich_text",   funcao: "Saudação, olá, texto introdutório. Suporta {{ contact.firstname }}" },
@@ -47,39 +44,30 @@ async function clonarTemplate(nome) {
   return getRes.data;
 }
 
-// ─── Helper: aplicar utm_campaign em todas as URLs dos widgets ───────────────
+// ─── Helper: aplicar utm_campaign em todas as URLs dos widgets do miolo ───────
 // Percorre todos os widgets e substitui utm_campaign= (vazio) pelo valor fornecido.
 // Cobre: html dos rich_text, link do banner_hero, e qualquer href nos blocos.
 function aplicarUtm(widgets, utm_campaign) {
   if (!utm_campaign) return widgets;
 
-  const encode = (v) => encodeURIComponent(v);
-  const utmValue = encode(utm_campaign);
+  const utmValue = encodeURIComponent(utm_campaign);
 
-  // Regex: captura utm_campaign= seguido de fim de string, &, " ou '
-  // Substitui apenas valores vazios — preserva UTMs já preenchidos
-  const substituir = (texto) =>
-    texto.replace(
+  const substituir = (texto) => {
+    if (!texto || typeof texto !== "string") return texto;
+    return texto.replace(
       /utm_campaign=(?=[&"'\s]|$)/g,
       `utm_campaign=${utmValue}`
     );
+  };
 
   const resultado = {};
   for (const [key, widget] of Object.entries(widgets)) {
     const body = widget?.body || {};
     const novoBody = { ...body };
 
-    // rich_text e html customizado
-    if (typeof body.html === "string") {
-      novoBody.html = substituir(body.html);
-    }
-
-    // image_email: link de clique no banner
-    if (typeof body.link === "string") {
-      novoBody.link = substituir(body.link);
-    }
-
-    // img.src (raro ter UTM aqui, mas cobre por precaução)
+    if (typeof body.html === "string")        novoBody.html  = substituir(body.html);
+    if (typeof body.value === "string")       novoBody.value = substituir(body.value);
+    if (typeof body.link === "string")        novoBody.link  = substituir(body.link);
     if (body.img?.src && typeof body.img.src === "string") {
       novoBody.img = { ...body.img, src: substituir(body.img.src) };
     }
@@ -91,7 +79,7 @@ function aplicarUtm(widgets, utm_campaign) {
 }
 
 // ─── MCP Server ───────────────────────────────────────────────────────────────
-const server = new McpServer({ name: "hubspot-email-mcp", version: "3.4.0" });
+const server = new McpServer({ name: "hubspot-email-mcp", version: "3.5.0" });
 
 // ── Tool 1: montar_email_hibrido ──────────────────────────────────────────────
 server.tool(
@@ -162,13 +150,11 @@ server.tool(
           "Cada key só pode aparecer uma vez."
         ),
         conteudo: z.object({
-          // Para banner_hero (image_email)
-          src: z.string().optional().describe("URL pública da imagem no HubSpot File Manager"),
-          alt: z.string().optional().describe("Texto alternativo da imagem"),
+          src:   z.string().optional().describe("URL pública da imagem no HubSpot File Manager"),
+          alt:   z.string().optional().describe("Texto alternativo da imagem"),
           width: z.number().optional().describe("Largura da imagem em px (padrão 600)"),
-          link: z.string().optional().describe("URL de destino ao clicar na imagem"),
-          // Para todos os rich_text
-          html: z.string().optional().describe(
+          link:  z.string().optional().describe("URL de destino ao clicar na imagem"),
+          html:  z.string().optional().describe(
             "HTML do bloco para widgets rich_text. " +
             "Deve ser HTML de e-mail válido (tabelas, inline styles, sem CSS externo). " +
             "Para CTAs: tabela com <a> estilizado como botão. " +
@@ -213,12 +199,8 @@ server.tool(
       }
 
       // 3. Montar novas seções na ordem definida pelo Claude
-      //    Widgets não incluídos são descartados (removidos do email)
-      //    Widgets incluídos têm seu conteúdo atualizado
       const novasSecoes = [];
       const widgetsAtualizados = { ...widgetsOriginais };
-
-      const keysUsadas = new Set(blocos.map(b => b.widget_key));
 
       for (const bloco of blocos) {
         const { widget_key, conteudo, cor_fundo_secao } = bloco;
@@ -229,7 +211,6 @@ server.tool(
           continue;
         }
 
-        // Atualizar seção com nova cor de fundo se especificada
         const secaoAtualizada = {
           ...secaoOriginal,
           style: {
@@ -239,12 +220,10 @@ server.tool(
         };
         novasSecoes.push(secaoAtualizada);
 
-        // Atualizar conteúdo do widget
         const tipoWidget = TEMPLATE_WIDGETS[widget_key]?.tipo;
         const widgetAtual = widgetsAtualizados[widget_key] || {};
 
         if (tipoWidget === "image_email") {
-          // Widget de imagem: atualizar img.src, img.alt, link
           widgetsAtualizados[widget_key] = {
             ...widgetAtual,
             body: {
@@ -259,7 +238,6 @@ server.tool(
             },
           };
         } else {
-          // Widget rich_text: atualizar html
           widgetsAtualizados[widget_key] = {
             ...widgetAtual,
             body: {
@@ -357,10 +335,14 @@ server.tool(
             const bodyKeys = Object.keys(w?.body || {});
             return {
               key,
-              tipo: bodyKeys.includes("img") ? "image_email"
-                  : bodyKeys.includes("html") ? "rich_text"
+              tipo: bodyKeys.includes("img")   ? "image_email"
+                  : bodyKeys.includes("html")  ? "rich_text"
+                  : bodyKeys.includes("value") ? "value"
                   : "outro",
-              preview: w?.body?.html?.substring(0, 80) || w?.body?.img?.src?.substring(0, 80) || null,
+              preview: w?.body?.html?.substring(0, 80)
+                    || w?.body?.img?.src?.substring(0, 80)
+                    || w?.body?.value?.substring(0, 80)
+                    || null,
             };
           }),
           background: section.style?.backgroundColor,
@@ -437,8 +419,10 @@ server.tool(
       const resultado = Object.entries(widgets).map(([key, w]) => ({
         key,
         bodyKeys: Object.keys(w?.body || {}),
-        htmlPreview: w?.body?.html?.substring(0, 120) || null,
-        imgSrc: w?.body?.img?.src || null,
+        htmlPreview:  w?.body?.html?.substring(0, 120)  || null,
+        valuePreview: w?.body?.value?.substring(0, 120) || null,
+        imgSrc:       w?.body?.img?.src || null,
+        link:         w?.body?.link || null,
       }));
       return { content: [{ type: "text", text: JSON.stringify({ total: resultado.length, widgets: resultado }, null, 2) }] };
     } catch (err) {
@@ -482,7 +466,11 @@ server.tool(
   }
 );
 
-// ── Tool 7: preencher_utms_footer ────────────────────────────────────────────
+// ── Tool 7: preencher_utms_footer ─────────────────────────────────────────────
+// FIX v3.5.0: removidos os campos body_html e body top-level (não existem no
+// response da API v3 — o PATCH neles era silenciosamente ignorado).
+// O loop agora cobre body.html, body.value, body.link e body.img.src,
+// alcançando todos os widgets do footer fixo (módulos protegidos do template).
 server.tool(
   "preencher_utms_footer",
   `Preenche automaticamente o utm_campaign em todas as URLs do footer fixo do template.
@@ -491,8 +479,8 @@ server.tool(
    Medicina, Odontologia, Consulta presencial, Consulta vídeo, Mapa de clínicas,
    Blog, Site, Facebook, Instagram, YouTube, LinkedIn e logo do header.
    
-   Esta tool busca o e-mail clonado, aplica o utm_campaign em todos os campos
-   do template (body_html, templateContext, head_html) e salva via PATCH.
+   Esta tool busca o e-mail clonado, percorre TODOS os widgets (incluindo os módulos
+   fixos do header/footer) e substitui utm_campaign= vazio pelo valor fornecido.
    
    QUANDO USAR: sempre após montar_email_hibrido, antes de notificar_crm.
    
@@ -511,8 +499,6 @@ server.tool(
     try {
       const utmValue = encodeURIComponent(utm_campaign);
 
-      // Regex que captura utm_campaign= com valor vazio
-      // Cobre: utm_campaign= seguido de " ' & espaço ou fim
       const substituir = (texto) => {
         if (!texto || typeof texto !== "string") return texto;
         return texto.replace(
@@ -526,70 +512,42 @@ server.tool(
       const getRes = await hs.get(`/marketing/v3/emails/${email_id}`);
       const emailData = getRes.data;
 
-      // 2. Aplicar UTM nos campos que contêm o HTML do template fixo
-      // O HubSpot armazena o HTML compilado do template em campos top-level:
-      // body_html, template_content, head_html e também em templateContext
-      const payload = {};
-      let substituicoes = 0;
-
-      // Campo body_html — HTML completo compilado incluindo header/footer fixos
-      if (emailData.body_html) {
-        const novo = substituir(emailData.body_html);
-        if (novo !== emailData.body_html) {
-          payload.body_html = novo;
-          // Conta quantas substituições foram feitas
-          const matches = (emailData.body_html.match(/utm_campaign=(?=[&"'\s]|$)/g) || []).length;
-          substituicoes += matches;
-        }
-      }
-
-      // Campo body — fallback para alguns templates
-      if (emailData.body) {
-        const novo = substituir(emailData.body);
-        if (novo !== emailData.body) {
-          payload.body = novo;
-        }
-      }
-
-      // Widgets — também percorre widgets para cobrir miolo (complementa aplicarUtm do montar)
+      // 2. Percorrer TODOS os widgets (miolo + módulos fixos do header/footer)
       const widgets = emailData.content?.widgets || {};
       const novosWidgets = {};
-      let widgetsAlterados = 0;
+      let substituicoes = 0;
 
       for (const [key, widget] of Object.entries(widgets)) {
         const body = widget?.body || {};
-        const novoHtml = substituir(body.html);
-        const novoLink = substituir(body.link);
+
+        const novoHtml   = substituir(body.html);
+        const novoValue  = substituir(body.value);
+        const novoLink   = substituir(body.link);
         const novoImgSrc = body.img?.src ? substituir(body.img.src) : body.img?.src;
 
-        const mudouHtml = novoHtml !== body.html;
-        const mudouLink = novoLink !== body.link;
-        const mudouImg = novoImgSrc !== body.img?.src;
+        const mudouHtml  = novoHtml  !== body.html;
+        const mudouValue = novoValue !== body.value;
+        const mudouLink  = novoLink  !== body.link;
+        const mudouImg   = novoImgSrc !== body.img?.src;
 
-        if (mudouHtml || mudouLink || mudouImg) {
+        if (mudouHtml || mudouValue || mudouLink || mudouImg) {
           novosWidgets[key] = {
             ...widget,
             body: {
               ...body,
-              ...(mudouHtml && { html: novoHtml }),
-              ...(mudouLink && { link: novoLink }),
-              ...(mudouImg && { img: { ...body.img, src: novoImgSrc } }),
+              ...(mudouHtml  && { html:  novoHtml  }),
+              ...(mudouValue && { value: novoValue }),
+              ...(mudouLink  && { link:  novoLink  }),
+              ...(mudouImg   && { img: { ...body.img, src: novoImgSrc } }),
             },
           };
-          widgetsAlterados++;
+          substituicoes++;
         } else {
           novosWidgets[key] = widget;
         }
       }
 
-      if (widgetsAlterados > 0) {
-        payload.content = {
-          ...emailData.content,
-          widgets: novosWidgets,
-        };
-      }
-
-      if (Object.keys(payload).length === 0) {
+      if (substituicoes === 0) {
         console.log(`[preencher_utms_footer] nenhuma URL com utm_campaign= vazio encontrada`);
         return {
           content: [{
@@ -598,21 +556,26 @@ server.tool(
               sucesso: true,
               email_id,
               utm_campaign,
-              aviso: "Nenhuma URL com utm_campaign= vazio encontrada. UTMs podem já estar preenchidas ou o template usa outro formato.",
+              aviso: "Nenhuma URL com utm_campaign= vazio encontrada nos widgets. Use inspecionar_widgets para verificar a estrutura do e-mail.",
               substituicoes: 0,
             }, null, 2),
           }],
         };
       }
 
-      // 3. PATCH com os campos atualizados
-      await hs.patch(`/marketing/v3/emails/${email_id}`, payload);
+      // 3. PATCH enviando apenas content.widgets
+      await hs.patch(`/marketing/v3/emails/${email_id}`, {
+        content: {
+          ...emailData.content,
+          widgets: novosWidgets,
+        },
+      });
 
       const accountId = process.env.HUBSPOT_ACCOUNT_ID || "5338832";
       const businessUnitId = process.env.HUBSPOT_BUSINESS_UNIT_ID || "255144";
       const editUrl = `https://app.hubspot.com/email/${accountId}/edit/${email_id}/content?returnPath=%2Fmanage%2Fstate%2Fdraft%3FbusinessUnitId%3D${businessUnitId}`;
 
-      console.log(`[preencher_utms_footer] ✅ utm_campaign="${utm_campaign}" aplicado | widgets alterados: ${widgetsAlterados}`);
+      console.log(`[preencher_utms_footer] ✅ ${substituicoes} widgets atualizados com utm_campaign="${utm_campaign}"`);
 
       return {
         content: [{
@@ -621,8 +584,7 @@ server.tool(
             sucesso: true,
             email_id,
             utm_campaign,
-            widgets_alterados: widgetsAlterados,
-            body_html_atualizado: !!payload.body_html,
+            widgets_alterados: substituicoes,
             editUrl,
           }, null, 2),
         }],
@@ -671,7 +633,7 @@ const OAUTH_CLIENT_ID = process.env.OAUTH_CLIENT_ID || "amorsaude-client-id";
 const OAUTH_CLIENT_SECRET = process.env.OAUTH_CLIENT_SECRET || "amorsaude-client-secret";
 const authCodes = new Map();
 
-app.get("/", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "3.2.0", status: "ok" }));
+app.get("/", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "3.5.0", status: "ok" }));
 
 app.get("/.well-known/oauth-authorization-server", (_req, res) => res.json({
   issuer: BASE_URL,
@@ -731,12 +693,12 @@ app.post("/mcp", async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
-app.get("/mcp", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "3.2.0" }));
-app.get("/health", (_req, res) => res.json({ status: "ok", version: "3.2.0" }));
+app.get("/mcp", (_req, res) => res.json({ name: "hubspot-email-mcp", version: "3.5.0" }));
+app.get("/health", (_req, res) => res.json({ status: "ok", version: "3.5.0" }));
 
 app.listen(PORT, () => {
-  console.log(`✅ HubSpot MCP v3.2.0 rodando na porta ${PORT}`);
-  console.log(`   Template base: 213359251380`);
-  console.log(`   Tools: montar_email_hibrido, preencher_utms_footer, upload_asset, notificar_crm
-   Widgets fixos: ${Object.keys(TEMPLATE_WIDGETS).join(", ")}`);
+  console.log(`✅ HubSpot MCP v3.5.0 rodando na porta ${PORT}`);
+  console.log(`   Template base: ${process.env.HUBSPOT_TEMPLATE_ID || "213359251380"}`);
+  console.log(`   Tools: montar_email_hibrido, preencher_utms_footer, inspecionar_secoes, inspecionar_widgets, upload_asset, notificar_crm`);
+  console.log(`   Widgets fixos: ${Object.keys(TEMPLATE_WIDGETS).join(", ")}`);
 });
